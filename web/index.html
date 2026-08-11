@@ -32,8 +32,38 @@
     font-weight: 700;
     font-size: 18px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
   header span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  #favoritesBtn {
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #favoritesBtn:hover { border-color: var(--accent); color: var(--accent); }
+  .fav-star-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 14px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .fav-star-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .fav-star-btn:disabled { opacity: 0.6; cursor: default; }
+  .fav-condition { color: var(--muted); font-size: 12px; margin-top: 4px; }
 
   #main { flex: 1; display: flex; min-height: 0; }
 
@@ -58,6 +88,33 @@
     cursor: pointer;
   }
   .board-back-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .board-back-btn:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+  .board-nav { display: flex; gap: 8px; margin-bottom: 16px; }
+  .board-nav .board-back-btn { margin-bottom: 0; }
+  .cart-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin: 8px 0;
+  }
+  .cart-item .cart-item-text { font-size: 14px; line-height: 1.5; }
+  .cart-item .cart-item-buy {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .cart-item .cart-item-buy:hover { background: var(--accent); color: #08111f; }
   .board-block { margin-bottom: 22px; }
   .board-intro { color: var(--muted); font-size: 14px; margin-bottom: 14px; line-height: 1.6; }
   .board-bullet-line { padding-left: 4px; line-height: 1.6; }
@@ -84,6 +141,7 @@
     cursor: pointer;
   }
   .board-actions button:hover { background: var(--accent); color: #08111f; }
+  .board-actions button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
   .board-image {
     display: block;
     cursor: pointer;
@@ -167,7 +225,7 @@
     cursor: pointer;
   }
   #excludeBtn:hover { border-color: var(--accent); color: var(--accent); }
-  #excludeBtn .badge {
+  #excludeBtn .badge, #fridgeBtn .badge {
     display: inline-block;
     background: var(--accent);
     color: #08111f;
@@ -177,9 +235,19 @@
     padding: 1px 7px;
     margin-left: 6px;
   }
+  #fridgeBtn {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #fridgeBtn:hover { border-color: var(--accent); color: var(--accent); }
 
-  /* 제외 재료 모달 */
-  #modalOverlay {
+  /* 모달 공통(제외 재료 / 즐겨찾기) */
+  .modal-overlay {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
@@ -188,18 +256,20 @@
     justify-content: center;
     z-index: 10;
   }
-  #modalOverlay.open { display: flex; }
-  #modalBox {
+  .modal-overlay.open { display: flex; }
+  .modal-box {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 14px;
     padding: 22px;
     width: 380px;
     max-width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
   }
-  #modalBox h3 { margin: 0 0 10px; font-size: 16px; }
-  #modalBox p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
-  #excludeInput {
+  .modal-box h3 { margin: 0 0 10px; font-size: 16px; }
+  .modal-box p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  #excludeInput, #fridgeInput {
     width: 100%;
     min-height: 80px;
     padding: 10px;
@@ -208,10 +278,11 @@
     background: var(--bg);
     color: var(--text);
     font-size: 14px;
+    font-family: inherit;
     resize: vertical;
   }
-  #modalActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-  #modalActions button {
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .modal-actions button {
     padding: 8px 16px;
     border-radius: 8px;
     border: 1px solid var(--border);
@@ -221,6 +292,32 @@
     font-size: 13px;
   }
   #modalSave { background: var(--bubble-user); border-color: var(--bubble-user); color: white; font-weight: 600; }
+  .fav-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+  .fav-list-item:hover { border-color: var(--accent); }
+  .fav-list-item .fav-list-text { font-size: 13px; line-height: 1.5; }
+  .fav-list-item .fav-list-title { font-weight: 700; }
+  .fav-list-item .fav-list-del {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .fav-list-item .fav-list-del:hover { border-color: #e05555; color: #e05555; }
 
   /* 오른쪽: 채팅 */
   #chatCol { flex: 1; display: flex; flex-direction: column; min-width: 320px; }
@@ -246,7 +343,10 @@
 </style>
 </head>
 <body>
-  <header>ReciFit <span>예산에 맞는 레시피 &amp; 장보기 도우미</span></header>
+  <header>
+    <div>ReciFit <span>예산에 맞는 레시피 &amp; 장보기 도우미</span></div>
+    <button id="favoritesBtn" type="button">⭐ 즐겨찾기</button>
+  </header>
   <div id="main">
     <div id="board"><div class="placeholder">레시피 후보 목록이나 조리순서처럼 긴 내용이 여기 크게 표시됩니다.</div></div>
     <div id="chatCol">
@@ -268,6 +368,11 @@
             피하고 싶은 음식/재료<span class="badge" id="excludeBadge" style="display:none">0</span>
           </button>
         </div>
+        <div class="cond-group">
+          <button id="fridgeBtn" type="button">
+            🧊 냉장고 재료<span class="badge" id="fridgeBadge" style="display:none">0</span>
+          </button>
+        </div>
       </div>
       <div id="chat"></div>
       <div class="status" id="status"></div>
@@ -278,14 +383,37 @@
     </div>
   </div>
 
-  <div id="modalOverlay">
-    <div id="modalBox">
+  <div id="modalOverlay" class="modal-overlay">
+    <div id="modalBox" class="modal-box">
       <h3>피하고 싶은 음식/재료</h3>
       <p>쉼표(,)나 줄바꿈으로 여러 개 입력하세요. 예: 새우, 계란, 오이</p>
       <textarea id="excludeInput" placeholder="예: 새우, 계란"></textarea>
-      <div id="modalActions">
+      <div class="modal-actions">
         <button id="modalCancel" type="button">취소</button>
         <button id="modalSave" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="fridgeOverlay" class="modal-overlay">
+    <div class="modal-box">
+      <h3>냉장고 재료</h3>
+      <p>이미 갖고 있어서 새로 안 사도 되는 재료를 적어두세요. 쉼표(,)나 줄바꿈으로 여러 개 입력하세요. 이 브라우저에 저장되며, 장보기 계산 때 자동으로 구매 목록에서 빠집니다.</p>
+      <textarea id="fridgeInput" placeholder="예: 두부, 대파, 계란"></textarea>
+      <div class="modal-actions">
+        <button id="fridgeCancel" type="button">취소</button>
+        <button id="fridgeSave" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="favoritesOverlay" class="modal-overlay">
+    <div class="modal-box">
+      <h3>즐겨찾기</h3>
+      <p>레시피 상세 화면의 "즐겨찾기 추가" 버튼으로 저장할 수 있어요. 클릭하면 그때 조건 그대로 바로 불러옵니다.</p>
+      <div id="favoritesList"></div>
+      <div class="modal-actions">
+        <button id="favoritesClose" type="button">닫기</button>
       </div>
     </div>
   </div>
@@ -297,6 +425,29 @@
 
   const userId = "web-" + Math.random().toString(36).slice(2, 10);
   const sessionId = "session-" + Math.random().toString(36).slice(2, 10);
+
+  // userId/sessionId는 새로고침마다 새로 생기지만, 즐겨찾기는 나중에도
+  // 봐야 하니 localStorage에 한 번 만들어서 이 브라우저에 계속 남겨둔다.
+  function getDeviceId() {
+    let id = localStorage.getItem("recifit_device_id");
+    if (!id) {
+      id = "device-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem("recifit_device_id", id);
+    }
+    return id;
+  }
+  const deviceId = getDeviceId();
+
+  // 즐겨찾기할 때 참고용으로 같이 저장해두는, 방금 사용자가 직접
+  // 타이핑해서 보낸 원문(조건 바 값이 앞에 붙은 전체 문장). 화면에
+  // 그대로 보여주는 용도가 아니라 저장용 — 실제 표시에는
+  // record_conditions로 받은 condition_summary(아래)를 쓴다.
+  let lastUserQueryText = "";
+
+  // 에이전트가 record_conditions로 보고한, "실제로 반영된" 최신 조건 —
+  // 채팅 문장으로만 말한 값(예: "4인분")까지 반영된 진짜 값이라, 조건 바
+  // 동기화와 즐겨찾기 요약 표시에 이걸 우선 쓴다.
+  let lastConditions = null;
 
   const chatEl = document.getElementById("chat");
   const boardEl = document.getElementById("board");
@@ -310,6 +461,14 @@
   const excludeBadge = document.getElementById("excludeBadge");
   const modalOverlay = document.getElementById("modalOverlay");
   const excludeInput = document.getElementById("excludeInput");
+  const favoritesBtn = document.getElementById("favoritesBtn");
+  const favoritesOverlay = document.getElementById("favoritesOverlay");
+  const favoritesListEl = document.getElementById("favoritesList");
+  const favoritesClose = document.getElementById("favoritesClose");
+  const fridgeBtn = document.getElementById("fridgeBtn");
+  const fridgeBadge = document.getElementById("fridgeBadge");
+  const fridgeOverlay = document.getElementById("fridgeOverlay");
+  const fridgeInput = document.getElementById("fridgeInput");
 
   const IMAGE_URL_RE = /https?:\/\/[^\s()<>"']+\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s()<>"']*)?/gi;
   const URL_RE = /https?:\/\/[^\s()<>"']+/g;
@@ -356,6 +515,84 @@
     closeExcludeModal();
   });
 
+  // ---- 냉장고 재료 (이미 있어서 안 사도 되는 재료) ----
+  // 인원수/예산/제외재료와 달리 새로고침해도 남아있어야 하는 정보라
+  // localStorage에 저장한다.
+  function loadFridgeItems() {
+    try {
+      const raw = localStorage.getItem("recifit_fridge_items");
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
+  }
+  let fridgeItems = loadFridgeItems();
+
+  function refreshFridgeBadge() {
+    if (fridgeItems.length) {
+      fridgeBadge.style.display = "inline-block";
+      fridgeBadge.textContent = fridgeItems.length;
+    } else {
+      fridgeBadge.style.display = "none";
+    }
+  }
+  refreshFridgeBadge();
+
+  function openFridgeModal() {
+    fridgeInput.value = fridgeItems.join(", ");
+    fridgeOverlay.classList.add("open");
+    fridgeInput.focus();
+  }
+  function closeFridgeModal() {
+    fridgeOverlay.classList.remove("open");
+  }
+  fridgeBtn.addEventListener("click", openFridgeModal);
+  document.getElementById("fridgeCancel").addEventListener("click", closeFridgeModal);
+  fridgeOverlay.addEventListener("click", (e) => {
+    if (e.target === fridgeOverlay) closeFridgeModal();
+  });
+  document.getElementById("fridgeSave").addEventListener("click", () => {
+    fridgeItems = fridgeInput.value
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    localStorage.setItem("recifit_fridge_items", JSON.stringify(fridgeItems));
+    refreshFridgeBadge();
+    closeFridgeModal();
+  });
+
+  // 에이전트가 record_conditions로 보고한 값으로 조건 바를 동기화한다 —
+  // 채팅 문장으로만 말한 조건(예: "4인분")도 화면 위 표시에 반영되게
+  // 하기 위함이다. 조건 바를 직접 조작한 게 아니라 에이전트가 실제로
+  // 반영한 값이 이거니, 이게 진짜 값이라고 보고 그대로 덮어쓴다.
+  function syncConditionBarFrom(conditions) {
+    if (typeof conditions.household_size === "number") {
+      householdSize = Math.max(1, Math.min(20, Math.round(conditions.household_size)));
+      householdValueEl.textContent = householdSize;
+    }
+    if (conditions.budget !== undefined && conditions.budget !== null) {
+      budgetInputEl.value = conditions.budget;
+    }
+    if (Array.isArray(conditions.excluded_items)) {
+      excludedItems = conditions.excluded_items;
+      if (excludedItems.length) {
+        excludeBadge.style.display = "inline-block";
+        excludeBadge.textContent = excludedItems.length;
+      } else {
+        excludeBadge.style.display = "none";
+      }
+    }
+    if (Array.isArray(conditions.fridge_items) && conditions.fridge_items.length) {
+      // 냉장고 재료는 localStorage가 원본이니, 채팅에서 그때만 언급된
+      // 것까지 영구 저장하진 않는다 — 배지 표시만 에이전트가 실제로 뭘
+      // 반영했는지 보여주기 위해 합쳐서 잠깐 보여준다.
+      const merged = Array.from(new Set([...fridgeItems, ...conditions.fridge_items]));
+      fridgeBadge.style.display = "inline-block";
+      fridgeBadge.textContent = merged.length;
+    }
+  }
+
   // 조건 바 상태를 자연어 한 줄로 요약 — 타이핑해서 보낸 메시지 앞에만 붙인다
   // (카드 클릭/예-아니요 같은 빠른 응답에는 안 붙인다)
   function buildConditionPrefix() {
@@ -363,6 +600,7 @@
     const budget = budgetInputEl.value.trim();
     if (budget) parts.push(`예산 ${Number(budget).toLocaleString()}원`);
     if (excludedItems.length) parts.push(`${excludedItems.join(", ")} 제외`);
+    if (fridgeItems.length) parts.push(`냉장고에 ${fridgeItems.join(", ")} 있음(이미 있으니 구매 목록에서 빼줘)`);
     return parts.join(", ") + ". ";
   }
 
@@ -418,6 +656,8 @@
     return img;
   }
 
+  const BULLET_RE = /^[-•*]\s+/;
+
   // 줄 하나를 이미지면 <img>, 아니면 텍스트로 렌더링해서 container에 붙인다
   function appendLine(container, line, { big } = {}) {
     if (isImageLine(line)) {
@@ -425,10 +665,55 @@
       return;
     }
     const p = document.createElement("div");
-    const isBullet = /^[-•]\s+/.test(line);
+    const isBullet = BULLET_RE.test(line);
     if (isBullet) p.className = "board-bullet-line";
-    p.innerHTML = inlineFormat(line.replace(/^[-•]\s+/, isBullet ? "• " : ""));
+    p.innerHTML = inlineFormat(line.replace(BULLET_RE, isBullet ? "• " : ""));
     container.appendChild(p);
+  }
+
+  // 순수 URL 한 줄(이미지 확장자 아님)인지 — 상품 구매 링크 줄을 찾을 때 쓴다.
+  function isBareUrlLine(line) {
+    if (isImageLine(line)) return false;
+    const trimmed = line.trim();
+    const matches = trimmed.match(URL_RE);
+    return !!(matches && matches.length === 1 && matches[0] === trimmed);
+  }
+
+  function appendProductCard(container, textLine, urlLine) {
+    const card = document.createElement("div");
+    card.className = "cart-item";
+    const text = document.createElement("div");
+    text.className = "cart-item-text";
+    text.innerHTML = inlineFormat(textLine.replace(BULLET_RE, ""));
+    const link = document.createElement("a");
+    link.className = "cart-item-buy";
+    link.href = urlLine.trim();
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "구매하러 가기 ↗";
+    card.appendChild(text);
+    card.appendChild(link);
+    container.appendChild(card);
+  }
+
+  // 줄 목록을 그린다 — 어떤 줄이든 바로 다음이 순수 URL 줄이면(상품명 +
+  // 구매 링크 패턴) 카드로 묶어서 보여주고, 그 외는 한 줄씩 그대로 그린다.
+  // 앞줄에 불릿(-/•/*)이 붙어있는지는 안 따진다 — 모델이 상품명 줄
+  // 앞에 불릿을 붙일 때도 있고 안 붙일 때도 있어서, "바로 다음이 순수
+  // URL"이라는 것 자체를 신호로 쓴다.
+  function renderLines(container, lines, { big } = {}) {
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const next = lines[i + 1];
+      if (line.trim() && !isBareUrlLine(line) && next !== undefined && isBareUrlLine(next)) {
+        appendProductCard(container, line, next);
+        i += 2;
+        continue;
+      }
+      appendLine(container, line, { big });
+      i += 1;
+    }
   }
 
   // 텍스트를 "번호 항목(+하위 줄)" 블록들과 그 사이의 일반 문단(줄 단위)으로 나눠 파싱
@@ -455,9 +740,9 @@
       // 하이픈/불릿으로 시작하거나 순수 이미지 URL인 줄만 "이 항목에 딸린
       // 내용"으로 본다 — 그 외(마무리 질문 등 일반 문장)는 항목이 끝난
       // 걸로 보고 outro로 분리한다.
-      const isSubLike = /^[-•]\s+/.test(line) || isImageLine(line);
+      const isSubLike = BULLET_RE.test(line) || isImageLine(line);
       if (currentItem && isSubLike) {
-        currentItem.subs.push(line.replace(/^[-•]\s+/, ""));
+        currentItem.subs.push(line.replace(BULLET_RE, ""));
         continue;
       }
 
@@ -472,46 +757,88 @@
     return { introLines, items, outroLines };
   }
 
-  let boardHistory = [];
-  let currentBoardText = null;
-
-  function renderBoard(text, { fromHistory = false } = {}) {
-    if (!fromHistory && currentBoardText !== null && currentBoardText !== text) {
-      boardHistory.push(currentBoardText);
-    }
-    currentBoardText = text;
-
-    boardEl.innerHTML = "";
-
-    if (boardHistory.length) {
-      const backBtn = document.createElement("button");
-      backBtn.className = "board-back-btn";
-      backBtn.textContent = "← 이전으로";
-      backBtn.addEventListener("click", () => {
-        const prev = boardHistory.pop();
-        renderBoard(prev, { fromHistory: true });
+  // 마지막 줄이 질문으로 끝나면("~까요?", "~나요?" 등) 바로 누를 수 있는
+  // 빠른 응답 버튼(예/아니요)을 붙인다. 텍스트 보드/레시피 상세 보드가 공유.
+  function appendQuickReplyIfQuestion(wrap, outroLines) {
+    const lastOutro = outroLines[outroLines.length - 1] || "";
+    if (/[?？]\s*$/.test(lastOutro)) {
+      const actions = document.createElement("div");
+      actions.className = "board-actions";
+      const yesBtn = document.createElement("button");
+      yesBtn.textContent = "네";
+      const noBtn = document.createElement("button");
+      noBtn.textContent = "아니요";
+      // 클릭하면 즉시 둘 다 비활성화한다 — 에이전트 응답이 오기 전까지는
+      // 보드가 다시 그려지지 않아서, 안 그러면 눌러도 버튼이 그대로
+      // 남아있어 클릭이 씹힌 것처럼 보인다.
+      const disableBoth = () => {
+        yesBtn.disabled = true;
+        noBtn.disabled = true;
+      };
+      yesBtn.addEventListener("click", () => {
+        disableBoth();
+        sendMessage("네");
       });
-      boardEl.appendChild(backBtn);
+      noBtn.addEventListener("click", () => {
+        disableBoth();
+        sendMessage("아니요");
+      });
+      actions.appendChild(yesBtn);
+      actions.appendChild(noBtn);
+      wrap.appendChild(actions);
     }
+  }
 
+  function appendOutro(wrap, outroLines) {
+    renderLines(wrap, outroLines);
+    appendQuickReplyIfQuestion(wrap, outroLines);
+  }
+
+  // recipe_search_agent가 실제로 돌려준 후보 풀(pool, 여러 메뉴 이름으로
+  // 나눠 검색한 결과가 다 섞여 있고 화면엔 그중 일부만 추려서 보여줄 수
+  // 있다)에서, 화면에 표시된 순서대로 각 항목의 진짜 recipe_id를
+  // 찾아낸다. 단순히 "호출 순서 = 표시 순서"로 가정하면 모델이 후보를
+  // 추려서 보여줄 때 어긋나므로, 표시된 레시피 이름과 풀의 name을 맞춰
+  // 찾는다(이름이 겹치면 앞에서부터 아직 안 쓴 것을 순서대로 배정).
+  // 모델이 후보 이름을 그대로 안 쓰고 띄어쓰기를 살짝 다듬어서 보여줄
+  // 때가 있어서("떠먹는파스타" -> "떠먹는 파스타"), 공백을 무시하고
+  // 비교한다.
+  function normalizeRecipeName(name) {
+    return (name || "").replace(/\s+/g, "");
+  }
+
+  function resolveCandidateRecipeIds(items, candidatePool) {
+    if (!candidatePool || !candidatePool.length) return [];
+    const pool = candidatePool.slice();
+    const used = new Array(pool.length).fill(false);
+    return items.map((item) => {
+      const plainTitle = normalizeRecipeName(item.title.replace(/\*\*/g, ""));
+      let idx = pool.findIndex((c, i) => !used[i] && normalizeRecipeName(c.name) === plainTitle);
+      if (idx === -1) idx = pool.findIndex((c, i) => !used[i]);
+      if (idx === -1) return undefined;
+      used[idx] = true;
+      return pool[idx].recipe_id;
+    });
+  }
+
+  // 챗봇이 쓴 텍스트(후보 목록, 장바구니 요약 등)를 파싱해서 보드에 그린다.
+  // candidatePool은 레시피 후보 목록일 때만 쓰인다(recipe_id 매칭용).
+  function renderTextBoardInto(wrap, text, candidatePool) {
     const { introLines, items, outroLines } = parseBlocks(text);
 
-    const wrap = document.createElement("div");
-    wrap.className = "board-block";
-
-    for (const line of introLines) {
-      appendLine(wrap, line, { big: true });
-    }
+    renderLines(wrap, introLines, { big: true });
 
     if (items.length) {
       // 항목 제목이 **굵게** 표시돼 있으면 레시피 후보 목록(카드 스타일),
-      // 아니면 조리순서 같은 단순 번호 목록으로 보여준다.
+      // 아니면 단순 번호 목록으로 보여준다.
       // (BOLD_RE는 /g 플래그가 있어 .test()에 그대로 쓰면 lastIndex가
       // 호출 사이에 남아 다음 문자열 검사를 그르칠 수 있어 indexOf로 확인)
       const looksLikeList = items.some((it) => it.title.indexOf("**") !== -1);
 
       if (looksLikeList) {
-        for (const item of items) {
+        const resolvedIds = resolveCandidateRecipeIds(items, candidatePool);
+        lastCandidateRecipeIds = resolvedIds;
+        items.forEach((item, i) => {
           const card = document.createElement("div");
           card.className = "item-card";
           card.title = "클릭하면 이 레시피를 선택합니다";
@@ -532,9 +859,19 @@
             }
             if (ul.children.length) card.appendChild(ul);
           }
-          card.addEventListener("click", () => sendMessage(`${item.num}번`));
+          card.addEventListener("click", () => {
+            const recipeId = resolvedIds[i];
+            const displayMsg = `${item.num}번`;
+            // recipe_id를 알고 있으면 메시지에 몰래 같이 실어 보낸다 —
+            // 채팅 버블에는 "1번"만 보이고(displayMsg), 모델에게는 정확한
+            // recipe_id까지 같이 전달된다.
+            const sendMsg = recipeId
+              ? `${displayMsg} (시스템 참고용 — 이 후보의 recipe_id는 정확히 "${recipeId}"입니다. get_recipe 등 도구 호출에 이 값을 그대로 사용하고, 다른 값으로 추측하거나 대체하지 마세요.)`
+              : undefined;
+            sendMessage(displayMsg, sendMsg);
+          });
           wrap.appendChild(card);
-        }
+        });
       } else {
         const ol = document.createElement("ol");
         ol.className = "step-list";
@@ -550,29 +887,140 @@
       }
     }
 
-    for (const line of outroLines) {
-      appendLine(wrap, line);
+    appendOutro(wrap, outroLines);
+    return { outroLines };
+  }
+
+  // get_recipe가 돌려준 원본 구조화 데이터(title/main_image/ingredients/
+  // instructions)를 직접 그린다 — Gemini가 옮겨 적은 텍스트를 파싱하는 게
+  // 아니라 도구 응답 그대로이므로, 이미지 URL 누락이나 내용 변형 같은
+  // 전사(transcription) 오류가 애초에 생길 수 없다.
+  function renderRecipeDetailInto(wrap, detail, outroText) {
+    if (detail.title) {
+      const titleEl = document.createElement("div");
+      titleEl.innerHTML = `<strong>${escapeHtml(detail.title)}</strong>`;
+      titleEl.style.fontSize = "17px";
+      wrap.appendChild(titleEl);
     }
 
-    // 마지막 줄이 질문으로 끝나면("~까요?", "~나요?" 등) 바로 누를 수 있는
-    // 빠른 응답 버튼을 보여준다 (예/아니요).
-    const lastOutro = outroLines[outroLines.length - 1] || "";
-    if (/[?？]\s*$/.test(lastOutro)) {
-      const actions = document.createElement("div");
-      actions.className = "board-actions";
-      const yesBtn = document.createElement("button");
-      yesBtn.textContent = "네";
-      yesBtn.addEventListener("click", () => sendMessage("네"));
-      const noBtn = document.createElement("button");
-      noBtn.textContent = "아니요";
-      noBtn.addEventListener("click", () => sendMessage("아니요"));
-      actions.appendChild(yesBtn);
-      actions.appendChild(noBtn);
-      wrap.appendChild(actions);
+    if (detail.description) {
+      const descEl = document.createElement("div");
+      descEl.className = "board-intro";
+      descEl.style.marginTop = "6px";
+      descEl.textContent = detail.description;
+      wrap.appendChild(descEl);
     }
+
+    if (detail.id) {
+      wrap.appendChild(makeFavoriteButton(detail));
+    }
+
+    if (detail.main_image) {
+      wrap.appendChild(makeImage(detail.main_image, { big: true }));
+    }
+
+    if (detail.ingredients && detail.ingredients.length) {
+      const subtitle = document.createElement("div");
+      subtitle.textContent = "재료";
+      subtitle.style.cssText = "font-weight:700; margin:16px 0 6px;";
+      wrap.appendChild(subtitle);
+      for (const ingredient of detail.ingredients) {
+        appendLine(wrap, "- " + ingredient);
+      }
+    }
+
+    if (detail.instructions && detail.instructions.length) {
+      const spacer = document.createElement("div");
+      spacer.style.height = "10px";
+      wrap.appendChild(spacer);
+
+      const ol = document.createElement("ol");
+      ol.className = "step-list";
+      for (const step of detail.instructions) {
+        const li = document.createElement("li");
+        li.innerHTML = inlineFormat(step.text || "");
+        if (step.image) li.appendChild(makeImage(step.image));
+        ol.appendChild(li);
+      }
+      wrap.appendChild(ol);
+    }
+
+    const outroLines = outroText ? [outroText] : [];
+    appendOutro(wrap, outroLines);
+    return { outroLines };
+  }
+
+  // 브라우저 히스토리처럼 "지금까지 본 보드 내용"을 전부 타임라인에 쌓아두고
+  // 인덱스만 옮겨 다닌다 — 레시피 상세를 보다가 장바구니 결과로 넘어간 뒤
+  // 다시 레시피로 돌아갔다가 장바구니를 또 보고 싶을 때, 이미 한 번 받은
+  // 내용이면 에이전트를 다시 호출하지 않고 그 자리에서 바로 다시 보여준다.
+  let boardTimeline = [];
+  let boardIndex = -1;
+
+  function renderCurrentBoard() {
+    boardEl.innerHTML = "";
+
+    if (boardTimeline.length > 1) {
+      const nav = document.createElement("div");
+      nav.className = "board-nav";
+
+      const backBtn = document.createElement("button");
+      backBtn.className = "board-back-btn";
+      backBtn.textContent = "← 이전으로";
+      backBtn.disabled = boardIndex <= 0;
+      backBtn.addEventListener("click", () => {
+        if (boardIndex > 0) {
+          boardIndex -= 1;
+          renderCurrentBoard();
+        }
+      });
+
+      const fwdBtn = document.createElement("button");
+      fwdBtn.className = "board-back-btn";
+      fwdBtn.textContent = "다음으로 →";
+      fwdBtn.disabled = boardIndex >= boardTimeline.length - 1;
+      fwdBtn.addEventListener("click", () => {
+        if (boardIndex < boardTimeline.length - 1) {
+          boardIndex += 1;
+          renderCurrentBoard();
+        }
+      });
+
+      nav.appendChild(backBtn);
+      nav.appendChild(fwdBtn);
+      boardEl.appendChild(nav);
+    }
+
+    const entry = boardTimeline[boardIndex];
+    const wrap = document.createElement("div");
+    wrap.className = "board-block";
+
+    const result =
+      entry.type === "recipe"
+        ? renderRecipeDetailInto(wrap, entry.detail, entry.outroText)
+        : renderTextBoardInto(wrap, entry.text, entry.candidatePool);
 
     boardEl.appendChild(wrap);
-    return { outroLines };
+    return result;
+  }
+
+  // 에이전트가 새 내용을 보내왔을 때만 호출한다 — "이전으로/다음으로"로
+  // 옮겨 다닐 때는 이미 있는 타임라인을 그대로 재사용하고 이 함수를
+  // 부르지 않는다. 뒤로 갔다가 새 메시지를 보내면 그 뒤(다시 갈 수 있던
+  // "다음" 구간)는 더 이상 유효하지 않으므로 잘라내고 새 항목을 붙인다.
+  //
+  // afterIndex를 명시적으로 넘기지 않으면 "지금" boardIndex를 기준으로
+  // 자른다 — 그런데 에이전트 응답은 몇 분씩 걸릴 수 있어서, 요청을 보낸
+  // 뒤 응답이 오기 전에 사용자가 뒤로/앞으로 눌러 boardIndex가 바뀌면
+  // 엉뚱한 위치를 기준으로 잘려서 그 사이 봤던 화면이 사라질 수 있다.
+  // sendMessage처럼 응답을 기다리는 호출부는 요청을 보내기 "전" 시점의
+  // boardIndex를 afterIndex로 직접 넘겨서 이 문제를 피한다.
+  function showBoard(entry, afterIndex) {
+    const cutAt = afterIndex === undefined ? boardIndex : afterIndex;
+    boardTimeline = boardTimeline.slice(0, cutAt + 1);
+    boardTimeline.push(entry);
+    boardIndex = boardTimeline.length - 1;
+    return renderCurrentBoard();
   }
 
   async function ensureSession() {
@@ -594,59 +1042,474 @@
     return parts.join("\n").trim();
   }
 
-  async function sendMessage(overrideText) {
+  // 이번 턴에 특정 도구(예: get_recipe)가 호출됐다면 그 원본 응답을 찾아
+  // 돌려준다 — ADK의 /run 응답에는 최종 텍스트뿐 아니라 각 도구 호출의
+  // functionResponse 이벤트도 그대로 들어있어서, 모델이 옮겨 적은 텍스트를
+  // 다시 파싱하지 않고 실제 값을 바로 쓸 수 있다.
+  function findFunctionResponse(events, toolName) {
+    for (const event of events) {
+      const parts = event.content && event.content.parts;
+      if (!parts) continue;
+      for (const part of parts) {
+        if (part.functionResponse && part.functionResponse.name === toolName) {
+          return part.functionResponse.response;
+        }
+      }
+    }
+    return null;
+  }
+
+  // toolName이 이번 턴에 여러 번 호출됐을 수 있을 때(예: recipe_search_agent를
+  // 메뉴 이름마다 여러 번 호출) 그 응답 전부를 호출된 순서 그대로 돌려준다.
+  function findAllFunctionResponses(events, toolName) {
+    const results = [];
+    for (const event of events) {
+      const parts = event.content && event.content.parts;
+      if (!parts) continue;
+      for (const part of parts) {
+        if (part.functionResponse && part.functionResponse.name === toolName) {
+          results.push(part.functionResponse.response);
+        }
+      }
+    }
+    return results;
+  }
+
+  // 후보 목록에서 "N번"을 화면에 표시된 순서대로 recipe_id에 매핑해둔다
+  // — 사용자가 번호로 고르면, 모델이 자기 대화 기억만으로 recipe_id를
+  // 다시 찾게 하지 않고 이 정확한 값을 메시지에 실어 보낸다(모델이 가끔
+  // 후보가 많을 때 엉뚱한 레시피를 불러오는 문제가 있었다).
+  let lastCandidateRecipeIds = [];
+
+  // 지금 어떤 도구가 호출됐는지에 따라 상태 문구를 다르게 보여준다 —
+  // [B-2]처럼 재료마다 순서대로 여러 번 도구를 호출하는 단계는 몇 분씩
+  // 걸릴 수 있는데, "생각 중..."만 떠 있으면 멈춘 건지 알 수가 없어서
+  // 실제로 뭘 하고 있는지 보여준다.
+  const TOOL_STATUS_LABELS = {
+    recipe_search_agent: "레시피 찾는 중...",
+    product_search_agent: "마켓컬리에서 상품 찾는 중...",
+    get_recipe: "조리순서 가져오는 중...",
+    search_products: "마켓컬리 검색 중...",
+    count_products: "검색 결과 개수 확인 중...",
+    get_product_detail: "상품 상세 확인 중...",
+    parse_recipe_ingredients: "재료 정리하는 중...",
+    parse_recipe_servings: "인분 정보 확인 중...",
+    scale_ingredient_amount: "필요한 양 계산 중...",
+    pick_cheapest_product: "최저가 상품 고르는 중...",
+    summarize_cart: "총 비용 계산하는 중...",
+  };
+
+  function statusLabelForEvent(event) {
+    const parts = event.content && event.content.parts;
+    if (!parts) return null;
+    for (const part of parts) {
+      if (part.functionCall && TOOL_STATUS_LABELS[part.functionCall.name]) {
+        return TOOL_STATUS_LABELS[part.functionCall.name];
+      }
+    }
+    return null;
+  }
+
+  // /run 대신 /run_sse로 호출해서, 전체 응답이 끝날 때까지 기다리지 않고
+  // 이벤트가 생성되는 즉시(SSE) 하나씩 받는다 — onEvent 콜백으로 상태
+  // 문구를 실시간으로 갱신할 수 있다. 최종적으로는 /run과 동일하게 전체
+  // 이벤트 배열을 돌려준다.
+  async function runAgentStreaming(sendText, onEvent, signal) {
+    const res = await fetch(`${API_BASE}/run_sse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        app_name: APP_NAME,
+        user_id: userId,
+        session_id: sessionId,
+        new_message: { role: "user", parts: [{ text: sendText }] },
+        streaming: false,
+      }),
+      signal,
+    });
+
+    if (!res.ok) {
+      const err = new Error(await res.text());
+      err.status = res.status;
+      throw err;
+    }
+
+    const events = [];
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let sepIndex;
+      while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, sepIndex);
+        buffer = buffer.slice(sepIndex + 2);
+        const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
+        if (!dataLine) continue;
+        const jsonText = dataLine.slice(5).trim();
+        if (!jsonText) continue;
+        const event = JSON.parse(jsonText);
+        events.push(event);
+        onEvent(event);
+      }
+    }
+
+    return events;
+  }
+
+  // 레시피(recipe_id) + 지금 조건 바 상태(인원수/예산/제외재료)를 묶은 키.
+  // 같은 레시피를 같은 조건으로 다시 고르면 이 키로 저장된 장바구니
+  // 결과를 재사용한다. (meal_count처럼 조건 바에 없는 값은 반영 못 함 —
+  // 채팅으로만 말한 조건까지는 키에 넣을 수 없다는 한계가 있다.)
+  function cacheKeyFor(recipeId) {
+    const budget = budgetInputEl.value.trim() || "none";
+    const excluded = [...excludedItems].sort().join(",");
+    return `${recipeId}|h${householdSize}|b${budget}|e${excluded}`;
+  }
+
+  async function fetchCachedCart(cacheKey) {
+    const res = await fetch(`${API_BASE}/favorites/${encodeURIComponent(cacheKey)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`favorites lookup failed: ${res.status}`);
+    return res.json();
+  }
+
+  function saveCachedCart(cacheKey, text) {
+    // 저장 실패해도 대화 흐름에는 영향 없게 조용히 무시한다 — 캐시는
+    // 있으면 좋은 최적화일 뿐, 없다고 기능이 깨지면 안 된다.
+    fetch(`${API_BASE}/favorites/${encodeURIComponent(cacheKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).catch(() => {});
+  }
+
+  // ---- 즐겨찾기 (사용자가 명시적으로 저장, 나중에 목록에서 다시 봄) ----
+
+  function makeFavoriteButton(detail) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "fav-star-btn";
+    btn.textContent = "☆ 즐겨찾기 추가";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.textContent = "저장 중...";
+      // record_conditions로 받은, 에이전트가 직접 간결하게 요약한 문구를
+      // 우선 쓴다 — 채팅 원문을 그대로 목록에 보여주지 않기 위함이다.
+      // 혹시 못 받았으면(비정상 상황) 조건 바 값으로 대충 대체한다.
+      const conditionSummary =
+        (lastConditions && lastConditions.condition_summary) ||
+        `인원수 ${householdSize}명, 예산 ${budgetInputEl.value.trim() || "제한 없음"}${excludedItems.length ? ", " + excludedItems.join(", ") + " 제외" : ""}`;
+      const householdForSave = (lastConditions && lastConditions.household_size) ?? householdSize;
+      const budgetForSave = lastConditions && lastConditions.budget !== undefined
+        ? lastConditions.budget
+        : budgetInputEl.value.trim() || null;
+      const excludedForSave = (lastConditions && lastConditions.excluded_items) || excludedItems;
+      const fridgeForSave = (lastConditions && lastConditions.fridge_items) || fridgeItems;
+      try {
+        await fetch(`${API_BASE}/favorite-recipes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            device_id: deviceId,
+            recipe_id: detail.id,
+            title: detail.title || "레시피",
+            condition_summary: conditionSummary,
+            household_size: householdForSave,
+            budget: budgetForSave,
+            excluded_items: excludedForSave,
+            fridge_items: fridgeForSave,
+            raw_query: lastUserQueryText || null,
+            recipe_detail: detail,
+          }),
+        });
+        btn.textContent = "★ 즐겨찾기 완료";
+      } catch (err) {
+        btn.textContent = "☆ 즐겨찾기 추가 (실패, 다시 시도)";
+        btn.disabled = false;
+      }
+    });
+    return btn;
+  }
+
+  function renderFavoritesList(favorites) {
+    favoritesListEl.innerHTML = "";
+    if (!favorites.length) {
+      favoritesListEl.innerHTML = '<p class="board-intro" style="margin:0;">아직 즐겨찾기한 레시피가 없어요.</p>';
+      return;
+    }
+    for (const fav of favorites) {
+      const item = document.createElement("div");
+      item.className = "fav-list-item";
+
+      const text = document.createElement("div");
+      text.className = "fav-list-text";
+      text.innerHTML =
+        `<div class="fav-list-title">${escapeHtml(fav.title || "레시피")}</div>` +
+        `<div>${escapeHtml(fav.condition_summary || "")}</div>`;
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "fav-list-del";
+      delBtn.textContent = "삭제";
+      delBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        delBtn.disabled = true;
+        try {
+          await fetch(
+            `${API_BASE}/favorite-recipes/${encodeURIComponent(fav.id)}?device_id=${encodeURIComponent(deviceId)}`,
+            { method: "DELETE" }
+          );
+          openFavoritesModal();
+        } catch (err) {
+          delBtn.disabled = false;
+        }
+      });
+
+      item.appendChild(text);
+      item.appendChild(delBtn);
+      item.addEventListener("click", () => loadFavorite(fav));
+      favoritesListEl.appendChild(item);
+    }
+  }
+
+  // 즐겨찾기를 고르면, 그 당시 조건(인원수/예산/제외재료)을 조건 바에
+  // 그대로 복원하고 레시피 상세를 에이전트 호출 없이 바로 보여준다.
+  // 같은 레시피+조건으로 저장해둔 장바구니 결과가 있으면 이어서 보여준다.
+  async function loadFavorite(fav) {
+    closeFavoritesModal();
+
+    if (typeof fav.household_size === "number") {
+      householdSize = Math.max(1, Math.min(20, fav.household_size));
+      householdValueEl.textContent = householdSize;
+    }
+    budgetInputEl.value = fav.budget || "";
+    excludedItems = Array.isArray(fav.excluded_items) ? fav.excluded_items : [];
+    if (excludedItems.length) {
+      excludeBadge.style.display = "inline-block";
+      excludeBadge.textContent = excludedItems.length;
+    } else {
+      excludeBadge.style.display = "none";
+    }
+    if (Array.isArray(fav.fridge_items) && fav.fridge_items.length) {
+      fridgeBadge.style.display = "inline-block";
+      fridgeBadge.textContent = fav.fridge_items.length;
+    }
+    lastConditions = {
+      household_size: householdSize,
+      budget: fav.budget ?? null,
+      excluded_items: excludedItems,
+      fridge_items: fav.fridge_items || [],
+      meal_count: fav.meal_count ?? 1,
+      condition_summary: fav.condition_summary || "",
+    };
+
+    const { outroLines } = showBoard({
+      type: "recipe",
+      detail: fav.recipe_detail,
+      outroText: `저장된 즐겨찾기를 불러왔어요 (${fav.condition_summary || "조건 정보 없음"}).`,
+    });
+    addBubble("bot", outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋");
+
+    if (fav.recipe_detail && fav.recipe_detail.id) {
+      try {
+        const cached = await fetchCachedCart(cacheKeyFor(fav.recipe_detail.id));
+        if (cached && cached.text) {
+          showBoard({ type: "text", text: cached.text });
+        }
+      } catch (err) {
+        // 캐시된 장바구니가 없거나 조회에 실패해도 레시피 상세는 이미 보여줬으니 무시한다.
+      }
+    }
+  }
+
+  async function openFavoritesModal() {
+    favoritesOverlay.classList.add("open");
+    favoritesListEl.innerHTML = '<p class="board-intro" style="margin:0;">불러오는 중...</p>';
+    try {
+      const res = await fetch(`${API_BASE}/favorite-recipes?device_id=${encodeURIComponent(deviceId)}`);
+      const data = await res.json();
+      renderFavoritesList(data.favorites || []);
+    } catch (err) {
+      favoritesListEl.innerHTML = '<p class="board-intro" style="margin:0;">불러오지 못했습니다.</p>';
+    }
+  }
+
+  function closeFavoritesModal() {
+    favoritesOverlay.classList.remove("open");
+  }
+
+  favoritesBtn.addEventListener("click", openFavoritesModal);
+  favoritesClose.addEventListener("click", closeFavoritesModal);
+  favoritesOverlay.addEventListener("click", (e) => {
+    if (e.target === favoritesOverlay) closeFavoritesModal();
+  });
+
+  // 에이전트가 처리 중일 때 엔터/카드 클릭/네·아니요 버튼으로 또 메시지를
+  // 보내면 두 요청이 동시에 겹쳐 실행되면서 상태 표시나 보드 갱신이
+  // 뒤섞일 수 있다 — sendBtn.disabled만으로는 이 경로들을 못 막아서
+  // 별도 플래그로 sendMessage 진입 자체를 막는다.
+  let isBusy = false;
+  let activeAbortController = null;
+
+  // sendOverrideText: 채팅창에 "보여줄" 문구(overrideText)와 실제로
+  // 에이전트에게 "보낼" 문구를 다르게 하고 싶을 때 쓴다 — 후보 카드
+  // 클릭 시 "1번을 선택합니다" 뒤에 정확한 recipe_id를 몰래 덧붙여
+  // 보내서, 모델이 자기 기억만으로 recipe_id를 다시 찾다가 틀리는 걸
+  // 막는 용도다.
+  async function sendMessage(overrideText, sendOverrideText) {
+    if (isBusy) return;
+
     const typed = overrideText !== undefined ? overrideText : inputEl.value;
     const displayText = typed.trim();
     if (!displayText) return;
 
+    isBusy = true;
+
+    // 이 요청을 보내는 시점의 위치를 기억해둔다 — 응답이 오는 동안
+    // 사용자가 이전으로/다음으로 눌러 boardIndex가 바뀌어도, 이 응답은
+    // 항상 "보낸 시점"을 기준으로 이어붙인다(응답 도착 시점 기준이 아님).
+    const sendBoardIndex = boardIndex;
+
     // 조건 바(인원수/예산/제외 재료)는 직접 타이핑한 메시지에만 자동으로
     // 덧붙인다 — 카드 클릭이나 "네"/"아니요" 같은 빠른 응답에는 안 붙인다.
-    const sendText = overrideText === undefined ? buildConditionPrefix() + displayText : displayText;
+    const sendText =
+      overrideText === undefined
+        ? buildConditionPrefix() + displayText
+        : sendOverrideText !== undefined
+        ? sendOverrideText
+        : displayText;
+    if (overrideText === undefined) lastUserQueryText = sendText;
 
     addBubble("user", displayText);
     if (overrideText === undefined) inputEl.value = "";
-    sendBtn.disabled = true;
+    sendBtn.textContent = "중지";
+
+    // 방금 레시피 상세를 본 상태에서 "네/예/응"으로 답하면 장보기 상품
+    // 검색으로 넘어가는 확인 응답이다 — 재료마다 실시간으로 Kurly를
+    // 검색하는 단계라 몇 분씩 걸릴 수 있으니, 같은 레시피+조건으로 이미
+    // 계산해둔 결과가 있으면 에이전트를 다시 부르지 않고 바로 보여준다.
+    const currentEntry = sendBoardIndex >= 0 ? boardTimeline[sendBoardIndex] : null;
+    const isConfirmReply =
+      ["네", "예", "응"].includes(displayText) &&
+      currentEntry &&
+      currentEntry.type === "recipe" &&
+      currentEntry.detail &&
+      currentEntry.detail.id;
+    let pendingCacheKey = null;
+
+    if (isConfirmReply) {
+      const cacheKey = cacheKeyFor(currentEntry.detail.id);
+      statusEl.textContent = "저장된 결과 확인 중...";
+      try {
+        const cached = await fetchCachedCart(cacheKey);
+        if (cached && cached.text) {
+          const { outroLines } = showBoard({ type: "text", text: cached.text }, sendBoardIndex);
+          const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
+          addBubble("bot", `이전에 계산해둔 결과를 바로 불러왔어요 ⚡ ${chatMsg}`);
+          isBusy = false;
+          sendBtn.textContent = "전송";
+          sendBtn.disabled = false;
+          statusEl.textContent = "";
+          inputEl.focus();
+          return;
+        }
+      } catch (err) {
+        // 캐시 조회가 실패해도 평소대로 에이전트를 호출하는 흐름으로 계속 진행한다.
+      }
+      pendingCacheKey = cacheKey;
+    }
+
     statusEl.textContent = "생각 중...";
+    let productSearchCount = 0;
+    activeAbortController = new AbortController();
 
     try {
-      const res = await fetch(`${API_BASE}/run`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          app_name: APP_NAME,
-          user_id: userId,
-          session_id: sessionId,
-          new_message: { role: "user", parts: [{ text: sendText }] },
-          streaming: false,
-        }),
-      });
+      const events = await runAgentStreaming(
+        sendText,
+        (event) => {
+          if (event.content && event.content.parts) {
+            for (const part of event.content.parts) {
+              if (part.functionCall && part.functionCall.name === "product_search_agent") {
+                productSearchCount += 1;
+              }
+            }
+          }
+          const label = statusLabelForEvent(event);
+          if (label) {
+            statusEl.textContent =
+              label === TOOL_STATUS_LABELS.product_search_agent
+                ? `${label} (재료 ${productSearchCount}개째)`
+                : label;
+          }
+        },
+        activeAbortController.signal
+      );
 
-      if (!res.ok) {
-        const errText = await res.text();
-        addBubble("bot", `오류가 발생했습니다 (${res.status}): ${errText}`);
-        return;
+      const reply = extractReplyText(events) || "(응답 없음)";
+      const recipeDetail = findFunctionResponse(events, "get_recipe");
+
+      const conditions = findFunctionResponse(events, "record_conditions");
+      if (conditions) {
+        lastConditions = conditions;
+        syncConditionBarFrom(conditions);
       }
 
-      const events = await res.json();
-      const reply = extractReplyText(events) || "(응답 없음)";
+      // recipe_search_agent가 메뉴 이름마다 여러 번 호출됐을 수 있으니
+      // (한식/양식처럼 범주로 물었을 때) 그 결과를 전부 모아 후보 풀로
+      // 만든다 — 화면에 표시된 순서와 이 풀의 순서가 항상 같지는
+      // 않으므로(모델이 추려서 보여줄 수 있음), 실제 recipe_id는 렌더링
+      // 시점에 이름으로 다시 맞춰 찾는다(resolveCandidateRecipeIds).
+      const recipeSearchResponses = findAllFunctionResponses(events, "recipe_search_agent");
+      const candidatePool = recipeSearchResponses.flatMap((r) => r.candidates || []);
 
-      if (isBigContent(reply)) {
-        const { outroLines } = renderBoard(reply);
+      if (recipeDetail && !recipeDetail.error) {
+        // 레시피 상세는 Gemini가 옮겨 적은 텍스트가 아니라 get_recipe의
+        // 원본 응답으로 직접 그린다 — 모델 답변(reply)은 그 밑에 붙는
+        // 짧은 대화(예: "장보기 상품도 찾아드릴까요?")로만 쓴다.
+        const { outroLines } = showBoard({ type: "recipe", detail: recipeDetail, outroText: reply }, sendBoardIndex);
+        const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 조리순서를 확인해보세요 📋";
+        addBubble("bot", chatMsg);
+      } else if (isBigContent(reply)) {
+        const { outroLines } = showBoard({ type: "text", text: reply, candidatePool }, sendBoardIndex);
+        if (pendingCacheKey) saveCachedCart(pendingCacheKey, reply);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
         addBubble("bot", chatMsg);
       } else {
         addBubble("bot", reply);
       }
     } catch (err) {
-      addBubble("bot", `서버에 연결할 수 없습니다: ${err.message}`);
+      if (err.name === "AbortError") {
+        addBubble("bot", "요청을 중지했습니다.");
+      } else if (err.status) {
+        addBubble("bot", `오류가 발생했습니다 (${err.status}): ${err.message}`);
+      } else {
+        addBubble("bot", `서버에 연결할 수 없습니다: ${err.message}`);
+      }
     } finally {
+      isBusy = false;
+      activeAbortController = null;
+      sendBtn.textContent = "전송";
       sendBtn.disabled = false;
       statusEl.textContent = "";
       inputEl.focus();
     }
   }
 
-  sendBtn.addEventListener("click", () => sendMessage());
+  // 처리 중일 때는 같은 버튼이 "중지"로 바뀌어 누르면 진행 중인 요청을
+  // 취소한다 — 그 전까지는 sendBtn.disabled로 막던 것을, 눌러서 멈출 수
+  // 있게 바꾼 것.
+  sendBtn.addEventListener("click", () => {
+    if (isBusy) {
+      if (activeAbortController) activeAbortController.abort();
+    } else {
+      sendMessage();
+    }
+  });
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendMessage();
   });

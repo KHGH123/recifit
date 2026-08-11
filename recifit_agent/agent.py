@@ -5,24 +5,31 @@ from google.adk.tools.agent_tool import AgentTool
 from google.genai import types
 from pydantic import BaseModel
 
-from recifit_agent.cart_tools import pick_cheapest_product, scale_ingredient_amount, summarize_cart
-from recifit_agent.kurly_client import count_products, get_product_detail, search_products
+from recifit_agent.conditions import record_conditions
 from recifit_agent.parsing_tools import parse_recipe_ingredients, parse_recipe_servings
 from recifit_agent.recipe_detail_client import get_recipe
 from recifit_agent.search_tools import search_recipes
+from recifit_agent.shopping_list import build_shopping_list
 
 model_name = os.getenv("MODEL", "gemini-2.5-flash")
 
 
-# recipe_search_agent/product_search_agent are exposed to root_agent via
-# AgentTool, which returns whatever text the sub-agent's own model writes as
-# its final reply — free-form prose, so a long numeric recipe_id can get
-# mistyped when the sub-agent "summarizes" what it found (this actually
-# happened in testing: fabricated sequential ids like "1", "2"). output_schema
-# forces that final reply into this fixed structure instead of prose, which
-# ADK does by letting the agent call tools freely and only constraining the
-# *last* response — so id fields get copied into typed fields rather than
+# recipe_search_agent is exposed to root_agent via AgentTool, which returns
+# whatever text the sub-agent's own model writes as its final reply —
+# free-form prose, so a long numeric recipe_id can get mistyped when the
+# sub-agent "summarizes" what it found (this actually happened in testing:
+# fabricated sequential ids like "1", "2"). output_schema forces that final
+# reply into this fixed structure instead of prose, which ADK does by
+# letting the agent call tools freely and only constraining the *last*
+# response — so id fields get copied into typed fields rather than
 # transcribed into a sentence, which is far less error-prone.
+#
+# Product search used to work the same way (a product_search_agent
+# sub-agent called once per ingredient), but that meant ~5 Gemini round
+# trips per ingredient — minutes of pure LLM latency for a recipe with
+# several ingredients. build_shopping_list (shopping_list.py) replaces it:
+# one deterministic tool call that scales, searches Kurly, and picks the
+# cheapest option for every ingredient in a single pass.
 class RecipeCandidate(BaseModel):
     recipe_id: str
     name: str
@@ -32,20 +39,6 @@ class RecipeCandidate(BaseModel):
 
 class RecipeSearchOutput(BaseModel):
     candidates: list[RecipeCandidate]
-
-
-class ProductCandidate(BaseModel):
-    product_id: str
-    name: str
-    price: int
-    pkg_amount: float | None = None
-    pkg_unit: str | None = None
-    vendor: str
-    url: str
-
-
-class ProductSearchOutput(BaseModel):
-    candidates: list[ProductCandidate]
 
 
 # ---------------------------------------------------------------------------
@@ -71,39 +64,6 @@ recipe_search_agent = Agent(
 )
 
 # ---------------------------------------------------------------------------
-# 상품 검색 AI: 재료 하나에 대해 마켓컬리에서 실시간으로 후보 상품을 찾는다.
-# ---------------------------------------------------------------------------
-product_search_agent = Agent(
-    name="product_search_agent",
-    model=model_name,
-    description="재료 하나를 입력받아 마켓컬리에서 그 재료를 구매할 수 있는 상품 후보를 실시간으로 검색한다.",
-    instruction="""
-        - search_products로 요청받은 재료명을 검색해서 상품 후보들을 찾는다
-          (품절 상품은 이미 결과에서 제외되어 있다).
-        - 검색어가 너무 포괄적이어서(예: "고기") 결과가 아주 많을 것 같으면
-          count_products로 전체 결과 규모를 먼저 확인해도 된다 — 너무
-          광범위하면 더 구체적인 재료명으로 search_products를 다시
-          호출한다.
-        - 가구 인원수가 많거나 여러 끼/오래 먹을 계획이라는 정보를 받으면,
-          대용량(pkg_amount가 큰) 상품도 함께 후보로 제시한다 — 소용량과
-          대용량을 둘 다 후보에 넣어야, 실제로 어느 쪽이 더 싼지는 계산
-          도구(pick_cheapest_product)가 필요한 총량 기준으로 정확히
-          판단할 수 있다.
-        - search_products 결과의 pkg_amount가 비어 있어 판단이 애매한 후보가
-          있으면, get_product_detail로 그 상품 하나만 보조 확인해도 된다
-          (모든 후보에 매번 호출할 필요는 없다).
-        - 가격/재고 정보는 조회 시점 기준 참고값이라는 점을 유념한다.
-        - 출력은 반드시 정해진 구조(candidates 목록)로만 작성한다. 설명
-          문장을 따로 쓰지 않는다. 각 필드(product_id, name, price,
-          pkg_amount, pkg_unit, vendor, url)는 도구가 돌려준 값을 한 글자도
-          바꾸지 않고 그대로 옮겨 적는다 — 특히 product_id와 price는 절대
-          스스로 만들어내지 않는다.
-    """,
-    tools=[search_products, count_products, get_product_detail],
-    output_schema=ProductSearchOutput,
-)
-
-# ---------------------------------------------------------------------------
 # greeting/오케스트레이터 AI: 사용자 자연어 요청을 해석하고 전체 흐름을 조율한다.
 # ---------------------------------------------------------------------------
 root_agent = Agent(
@@ -122,9 +82,9 @@ root_agent = Agent(
 
         이 흐름은 두 단계로 나뉜다: [A] 후보 목록 제시(가볍고 빠르게),
         [B] 사용자가 하나를 고르면 그때 정확한 상세 계산(느리지만 정확하게).
-        [A] 단계에서는 product_search_agent를 절대 호출하지 않는다 —
+        [A] 단계에서는 build_shopping_list를 절대 호출하지 않는다 —
         후보가 여러 개인데 재료마다 실제 상품을 검색하면 너무 오래 걸린다.
-        product_search_agent는 사용자가 후보 하나를 고른 뒤, [B] 단계에서
+        build_shopping_list는 사용자가 후보 하나를 고른 뒤, [B] 단계에서
         그 레시피 하나에 대해서만 호출한다.
 
         recipe_id는 대화 전체에서 언제나 도구 호출 인자로만 쓴다. 목록,
@@ -136,16 +96,34 @@ root_agent = Agent(
         [A] 처음 요청을 받았을 때:
 
         1. 사용자 요청에서 다음 조건을 추출한다: 원하는 음식/재료, 예산(원),
-           가구 인원수(household_size), 알레르기/제외 재료 목록, 몇 끼/며칠
-           분량을 만들어 먹고 싶은지(meal_count). "이틀치", "일주일 내내",
+           가구 인원수(household_size), 알레르기/제외 재료 목록, 이미 갖고
+           있어서 안 사도 되는 재료 목록(보유 재료), 몇 끼/며칠 분량을
+           만들어 먹고 싶은지(meal_count). "이틀치", "일주일 내내",
            "오래 두고 먹고 싶다"처럼 여러 번 먹을 의사가 보이면 그에 맞는
            횟수(예: 2, 7)로 meal_count를 정하고, 별다른 언급이 없으면
            meal_count=1(한 끼)로 둔다.
+
+           보유 재료는 "냉장고에 두부 있어서 필요 없어", "이건 이미 있어"
+           처럼 채팅 문장으로 직접 말한 것과, 메시지 앞에 "냉장고에 ...
+           있음(이미 있으니 구매 목록에서 빼줘)"처럼 자동으로 붙는 조건
+           문구 둘 다에서 챙긴다. 알레르기/제외 재료와는 다르다 — 제외
+           재료는 "절대 사면 안 되는" 것이고, 보유 재료는 "이미 있어서
+           안 사도 되는" 것이다(레시피에는 그대로 쓰이는 재료다).
+
            빠진 조건이 있어도 되묻지 말고 바로 진행한다 — 예산이 없으면
            "예산 제한 없음"으로, 가구 인원수가 없으면 1인분(household_size=1)
-           으로, 알레르기/제외 재료가 없으면 빈 목록으로 간주하고 다음 단계로
-           넘어간다. 어떤 조건을 기본값으로 채웠는지는 기억해뒀다가 나중에
-           알려준다.
+           으로, 알레르기/제외 재료·보유 재료가 없으면 빈 목록으로 간주하고
+           다음 단계로 넘어간다. 어떤 조건을 기본값으로 채웠는지는
+           기억해뒀다가 나중에 알려준다.
+
+           조건을 다 정리했으면, 다음 단계로 넘어가기 전에
+           record_conditions를 한 번 호출해서 방금 정리한 household_size,
+           budget, excluded_items, fridge_items, meal_count를 그대로
+           넘긴다 — 화면이 인원수 표시 등을 실제 반영된 값으로 맞추고
+           즐겨찾기 요약에 쓰는 용도다. condition_summary는 사용자 문장을
+           그대로 복사하지 말고 "1인 가구 · 예산 2만원 · 새우 제외"처럼
+           핵심만 짧게 새로 요약해서 넣는다. 이 호출 결과는 사용자에게
+           보여주지 않는다(내부 기록용).
 
            "한식", "양식", "중식"처럼 구체적인 메뉴가 아니라 큰 범주로
            요청하면, 사용자에게 더 구체적으로 말해달라고 되묻지 말고 네가
@@ -167,6 +145,15 @@ root_agent = Agent(
            구성을 보고 "대략 이 정도 비용일 것" 정도의 rough한 예상 가격을
            가늠한다. 이건 정확한 계산이 아니라 참고용 추정치다.
 
+           이때 레시피 원문의 인분 표기(예: "2인분", "4인분이상")가 보통
+           기본값이라는 걸 유념하고, 1번에서 파악한 사용자의 실제 가구
+           인원수(household_size)와 meal_count(몇 끼 분량인지)에 맞게
+           대략 비례해서 늘리거나 줄여 가늠한다 — 예를 들어 레시피가
+           2인분 기준인데 사용자가 4인분을 원하면 대략 2배 정도로,
+           meal_count가 2면 거기서 또 2배로 가늠하는 식이다. 정확한
+           곱셈을 요구하는 게 아니라, "인원수를 무시한 기본 레시피
+           가격"을 그대로 보여주지 않기 위한 것이다.
+
         4. 사용자에게 후보 레시피 목록을 아래 형식으로 보여준다:
 
            (맨 위, 한 번만) "아래 금액은 참고용 예상치이며, 실제 정확한
@@ -178,8 +165,13 @@ root_agent = Agent(
            약 OOOO원" 줄.
 
            (레시피마다 참고용이라는 문구를 반복하지 않는다 — 위 안내
-           한 줄로 충분하다.) 목록 마지막에 번호로 선택해달라고 물어보고
-           이번 턴을 마친다 (아직 재료 상세나 정확한 금액은 없다).
+           한 줄로 충분하다.) 번호로 선택해달라고 물어본다.
+
+           그 아래, 목록 맨 마지막 줄에 한 번만 이 출처 안내를 덧붙인다
+           (문구를 바꾸지 말고 아래 문장을 그대로 쓴다): "레시피 정보의
+           출처는 만개의 레시피이며, 같은 이름의 메뉴라도 작성자에 따라
+           재료와 조리법이 다를 수 있습니다." 이 문장을 끝으로 이번 턴을
+           마친다 (아직 재료 상세나 정확한 금액은 없다).
 
            여러 후보의 이름이 같거나 비슷할 수 있으므로(예: "떡볶이"가
            5개), 사용자가 이름으로 답하면 이름이 겹치는지 확인하고, 다음
@@ -187,6 +179,14 @@ root_agent = Agent(
            표시한 순서(위에서부터 1, 2, 3...)로 그대로 매핑해서 해당
            recipe_id를 사용한다 — 이름을 다시 검색하거나 새로 추측하지
            않는다.
+
+           메시지에 "(시스템 참고용 — 이 후보의 recipe_id는 정확히 "..."
+           입니다...)" 같은 문구가 괄호로 덧붙어 있으면, 그건 화면(웹
+           프론트엔드)이 자기가 그린 목록에서 직접 뽑아 보낸 정확한 값이다
+           — 네가 대화 기억으로 순서를 다시 세어보거나 다른 recipe_id를
+           떠올릴 필요 없이, 그 값을 그대로 get_recipe에 사용한다. 이
+           괄호 문구 자체는 사용자가 쓴 말이 아니니 사용자에게 보이는
+           어떤 문장에도 인용하거나 언급하지 않는다.
 
            recipe_id/레시피 ID는 이 목록을 포함해 사용자에게 보이는 어떤
            문구에도 절대 나오면 안 된다 — 검색이 실패해서 다시 시도하거나
@@ -198,72 +198,57 @@ root_agent = Agent(
 
         [B-1] 선택 직후 (조리순서만 먼저 보여주고, 여기서 이번 턴을 마친다):
 
-        5. get_recipe를 recipe_id로 호출해서 조리순서·이미지를 가져온다.
-           get_recipe가 에러를 반환하면(error 필드가 있으면) 조리순서
-           대신 "https://www.10000recipe.com/recipe/" 뒤에 recipe_id를
-           붙인 원본 링크만 안내한다.
+        5. get_recipe를 recipe_id로 호출한다. 이건 화면(웹 프론트엔드)이
+           title/main_image/ingredients/instructions을 직접 그리는 데
+           쓰는 원본 데이터를 가져오는 것뿐이다 — 그 내용은 이미 화면
+           왼쪽에 그대로 표시되니, 너는 재료 목록이나 조리순서를 다시
+           옮겨 적거나 요약하거나 설명하지 않는다. 문장에 넣지 마라.
 
-           에러가 아니면 아래 형식을 예외 없이 그대로 따른다 (내용은
-           더하거나 빼거나 바꾸지 않는다 — 재료명·수량·시간 등 실제
-           정보는 절대 바꾸지 않는다).
+           get_recipe가 에러를 반환하면(error 필드가 있으면), 조리순서를
+           불러오지 못했다고 짧게 안내하고 "https://www.10000recipe.com/recipe/"
+           뒤에 recipe_id를 붙인 원본 링크를 알려준다.
 
-           가장 중요한 규칙: main_image와 각 단계의 image 값은 URL
-           문자열 그대로, 절대 생략하지 말고 매번 출력한다. "사진은
-           원문 참고"처럼 URL을 대신 설명하거나 요약하지 않는다 — 실제
-           URL 문자열 자체를 다른 줄에 그대로 복사해서 적어야 한다. 이미지
-           URL을 생략하면 안 된다는 걸 절대 잊지 마라.
-
-           출력 순서:
-           a. title을 굵게 제목처럼 한 줄로 적는다.
-           b. 바로 다음 줄에 main_image의 URL 문자열을 그대로 적는다
-              (main_image가 없으면 이 줄은 생략).
-           c. 빈 줄 하나, 그다음 "재료" 같은 소제목 한 줄, 그 아래
-              ingredients 배열의 각 재료를 하이픈으로 시작하는 줄로
-              하나씩 그대로 적는다 (이름·수량 등을 바꾸지 않는다).
-           d. 빈 줄 하나.
-           e. instructions 배열의 각 단계마다, 번호와 마침표로 시작하는
-              새 줄로 하나씩 적는다 ("1. ...", "2. ..." — 별표나 쉼표로
-              여러 단계를 한 문장에 몰아넣지 않는다). 원문이 여러 동작을
-              한 문장에 몰아넣었다면, 의미를 바꾸지 않는 선에서 문장을
-              끊어 더 잘게 번호를 나눠도 된다. **그 단계에 image 값이
-              있으면, 그 번호 줄 바로 다음 줄에 그 image URL 문자열을
-              그대로 적는다 — 있는데도 빠뜨리면 안 된다.** image 값이
-              없는 단계만 URL 줄 없이 다음 번호로 넘어간다.
-
-        6. 조리순서를 보여준 다음, "실제 장보기 상품과 정확한 가격까지
-           찾아드릴까요?" 같은 질문으로 물어보고 이번 턴을 마친다. 아직
-           재료 검색이나 가격 계산은 시작하지 않는다.
+        6. 에러가 아니면, 레시피 이름을 언급하며 "레시피 준비됐어요!" 같은
+           짧은 한두 문장과 함께 "실제 장보기 상품과 정확한 가격까지
+           찾아드릴까요?" 같은 질문을 하고 이번 턴을 마친다. 아직 재료
+           검색이나 가격 계산은 시작하지 않는다.
 
         [B-2] 사용자가 상품/가격까지 원한다고 답했을 때만 (예/응/알려줘 등):
 
         7. parse_recipe_ingredients로 재료 원문을 구조화하고,
            parse_recipe_servings로 레시피 기준 인분 수를 구한다. 재료
-           목록에서 알레르기·제외 재료와 겹치는 항목은 제외 목록으로
-           분류하고, 나머지를 "조건을 충족한 재료" 목록으로 삼는다.
+           목록을 세 그룹으로 나눈다:
+           - 알레르기/제외 재료와 이름이 겹치는 것 → 제외 목록 (절대
+             구매 후보에 넣지 않는다).
+           - 1번에서 파악한 보유 재료(냉장고에 이미 있는 것)와 이름이
+             겹치는 것 → 보유 목록 (이미 있으니 새로 사지 않는다. 단,
+             레시피 자체에서 빠지는 건 아니다).
+           - 나머지 → "조건을 충족한 재료" 목록 (이것만 build_shopping_list에
+             넘긴다).
 
-        8. 조건을 충족한 재료마다:
-           a. scale_ingredient_amount로 가구 인원수와 meal_count(몇 끼
-              분량인지)에 맞게 필요량을 환산한다 (직접 곱셈하지 말고
-              반드시 이 도구를 호출하며, 1번에서 정한 meal_count를 그대로
-              전달한다).
-           b. product_search_agent를 호출해 상품 후보를 받는다. 가구
-              인원수가 많거나(예: 4인 이상) meal_count가 1보다 크면(여러
-              끼 먹을 계획이면) 대용량 상품도 함께 찾도록 요청 문구에 그
-              정보를 포함시킨다 — 어떤 게 실제로 더 저렴한지는 다음 단계의
-              계산 도구가 필요량 기준으로 판단한다.
-           c. pick_cheapest_product로 필요량을 채우는 가장 저렴한 상품을
-              고른다 (직접 비교하지 말고 반드시 이 도구를 호출한다).
+        8. build_shopping_list를 한 번만 호출한다 — 조건을 충족한 재료
+           목록(보유 재료는 뺀 것)과 인분 수(recipe_servings), 가구
+           인원수(household_size), 몇 끼 분량인지(meal_count, 1번에서
+           정한 값), 제외 재료(exclude_terms), 예산(budget)을 그대로
+           넘긴다. 재료마다 따로 도구를 부르지 않는다 — 인원수·끼니 수에
+           맞는 필요량 계산, 마켓컬리 실시간 검색, 필요량을 채우는 최저가
+           상품 선택(대용량이 더 싸면 자동으로 대용량 선택), 총액·예산
+           이내 여부 계산까지 이 도구 하나가 전부 처리해서 한 번에
+           돌려준다.
 
-        9. summarize_cart로 총액과 예산 이내 여부를 구한다 (직접 합산하지
-           말고 반드시 이 도구를 호출한다). 레시피명, 인분 환산 결과,
-           재료별 선택 상품과 수량, 총 예상 비용, 예산 이내 여부를 자연
-           스러운 한국어로 정리해서 보여준다. 재료별 선택 상품 줄마다,
-           pick_cheapest_product가 돌려준 그 상품의 url 값을 바로 다음
-           줄에 그대로 적는다(다른 줄과 합치지 말고, 요약하거나 텍스트로
-           바꾸지 않는다) — 사용자가 그 링크를 눌러 실제 구매 페이지로
-           바로 이동할 수 있어야 한다. 상품을 찾지 못한 재료는 따로
-           안내한다(이 경우 url은 없다). 이 금액은 3번의 참고용 추정치와
-           다를 수 있다는 것도 짧게 언급한다.
+        9. build_shopping_list 결과(selections, total_price, budget,
+           within_budget)를 가지고 레시피명, 인분 환산 결과, 재료별 선택
+           상품과 수량, 총 예상 비용, 예산 이내 여부를 자연스러운 한국어로
+           정리해서 보여준다. selections의 각 항목에 selected가 있으면,
+           그 상품 줄 바로 다음 줄에 selected.url 값을 그대로 적는다(다른
+           줄과 합치지 말고, 요약하거나 텍스트로 바꾸지 않는다) — 사용자가
+           그 링크를 눌러 실제 구매 페이지로 바로 이동할 수 있어야 한다.
+           selected가 없는(skipped_reason이 있는) 재료는 상품을 찾지
+           못했다고 따로 안내한다(이 경우 url은 없다). 7번에서 보유
+           목록으로 분류한 재료는 "이미 냉장고에 있어서 구매 목록에서
+           뺐다"고 별도로 짧게 안내한다(상품을 못 찾은 것과는 다른
+           이유이니 섞어서 말하지 않는다). 이 금액은 3번의 참고용
+           추정치와 다를 수 있다는 것도 짧게 언급한다.
 
         10. 마지막으로, 1번에서 사용자가 직접 말하지 않아 기본값으로 채운
            조건이 있다면, 그 조건들을 추가로 알려주면 더 정확한 추천을
@@ -280,12 +265,10 @@ root_agent = Agent(
     """,
     tools=[
         AgentTool(agent=recipe_search_agent),
-        AgentTool(agent=product_search_agent),
+        record_conditions,
         parse_recipe_ingredients,
         parse_recipe_servings,
-        scale_ingredient_amount,
-        pick_cheapest_product,
-        summarize_cart,
+        build_shopping_list,
         get_recipe,
     ],
     generate_content_config=types.GenerateContentConfig(temperature=0.2),
