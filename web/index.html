@@ -973,17 +973,13 @@
   // budget/within_budget)를 직접 그린다 — get_recipe와 같은 이유로,
   // Gemini가 재료 목록을 텍스트로 옮겨 적다가 일부를 빠뜨리거나(실제로
   // 재현된 문제) 가격을 잘못 옮기는 일이 애초에 생길 수 없다.
-  // get_recipe/build_shopping_list 결과는 화면이 원본 데이터로 직접
-  // 그리고, 모델의 텍스트 답변(reply)은 그 밑에 붙는 짧은 한두 문장으로만
-  // 써야 한다(agent.py 6/9번 지침). 그런데 모델이 이 지침을 어기고 재료
-  // 목록이나 조리순서 전체를 다시 옮겨 적어버리는 경우가 실제로 있었다
-  // — 그러면 위(구조화된 카드)와 아래(모델이 다시 쓴 텍스트)에 같은
-  // 내용이 지저분하게 중복된다. 비정상적으로 길면(정상적인 한두 문장
-  // 범위를 넘으면) 통째로 버리고 짧은 기본 문구로 대체한다.
+  // get_recipe/build_shopping_list 결과는 화면이 원본 데이터로 이미 다
+  // 그린다 — 모델의 텍스트 답변은 필요 없다. 모델이 재료 목록이나
+  // 조리순서 전체를 다시 옮겨 적어버려서(agent.py 6/9번 지침 위반) 구조화된
+  // 카드 밑에 같은 내용이 지저분하게 중복되는 문제가 실제로 있었다 —
+  // 내용을 보고 판단하지 않고, 이 자리에는 항상 고정된 짧은 문구만 쓴다.
   function sanitizeOutroText(text, fallback) {
-    const trimmed = (text || "").trim();
-    if (!trimmed) return "";
-    return trimmed.length > 220 ? fallback : trimmed;
+    return fallback;
   }
 
   function renderShoppingListInto(wrap, data, outroText) {
