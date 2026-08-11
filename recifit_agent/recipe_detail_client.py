@@ -14,8 +14,10 @@ def get_recipe(recipe_id: str) -> dict:
         recipe_id: 레시피 문서 ID (예: "1000240").
 
     Returns:
-        title, description, image, ingredients, instructions를 담은 dict.
-        페이지에서 레시피 정보를 못 찾으면 {"error": ...}를 담은 dict.
+        title, description, main_image, ingredients, instructions를 담은
+        dict. instructions는 {step, text, image}의 목록이며, image는 그
+        단계의 사진이 있을 때만 채워진다(없으면 None). 페이지에서 레시피
+        정보를 못 찾으면 {"error": ...}를 담은 dict.
     """
     url = f"https://www.10000recipe.com/recipe/{recipe_id}"
 
@@ -63,24 +65,34 @@ def get_recipe(recipe_id: str) -> dict:
 
     title = recipe_data.get("name")
     description = recipe_data.get("description")
-    image = recipe_data.get("image")
+    raw_image = recipe_data.get("image")
+    if isinstance(raw_image, list):
+        main_image = raw_image[0] if raw_image else None
+    else:
+        main_image = raw_image
     ingredients = recipe_data.get("recipeIngredient", [])
 
     instructions = []
     for step in recipe_data.get("recipeInstructions", []):
         if isinstance(step, dict):
             text = step.get("text")
-            if text:
-                instructions.append(text)
+            if not text:
+                continue
+            step_image = step.get("image")
+            if isinstance(step_image, list):
+                step_image = step_image[0] if step_image else None
+            instructions.append(
+                {"step": len(instructions) + 1, "text": text, "image": step_image}
+            )
         elif isinstance(step, str):
-            instructions.append(step)
+            instructions.append({"step": len(instructions) + 1, "text": step, "image": None})
 
     return {
         "id": recipe_id,
         "url": url,
         "title": title,
         "description": description,
-        "image": image,
+        "main_image": main_image,
         "ingredients": ingredients,
         "instructions": instructions,
     }
