@@ -1099,17 +1099,25 @@
   // 돌려준다 — ADK의 /run 응답에는 최종 텍스트뿐 아니라 각 도구 호출의
   // functionResponse 이벤트도 그대로 들어있어서, 모델이 옮겨 적은 텍스트를
   // 다시 파싱하지 않고 실제 값을 바로 쓸 수 있다.
+  //
+  // 마지막으로 일치하는 호출을 돌려준다(첫 번째가 아니라) — 모델이 같은
+  // 턴 안에서 같은 도구를 잘못 호출했다가 스스로 알아채고 다시 호출하는
+  // 경우가 실제로 있었다(예: 엉뚱한 recipe_id로 get_recipe를 부른 뒤
+  // "죄송합니다, 다시 찾아드릴게요"라며 올바른 recipe_id로 재호출).
+  // 최종 답변 텍스트는 항상 마지막 호출 결과를 기준으로 쓰이므로, 화면도
+  // 첫 번째가 아니라 마지막 호출 결과를 보여줘야 텍스트와 화면이 일치한다.
   function findFunctionResponse(events, toolName) {
+    let result = null;
     for (const event of events) {
       const parts = event.content && event.content.parts;
       if (!parts) continue;
       for (const part of parts) {
         if (part.functionResponse && part.functionResponse.name === toolName) {
-          return part.functionResponse.response;
+          result = part.functionResponse.response;
         }
       }
     }
-    return null;
+    return result;
   }
 
   // toolName이 이번 턴에 여러 번 호출됐을 수 있을 때(예: recipe_search_agent를
@@ -1432,9 +1440,22 @@
 
     // 조건 바(인원수/예산/제외 재료)는 직접 타이핑한 메시지에만 자동으로
     // 덧붙인다 — 카드 클릭이나 "네"/"아니요" 같은 빠른 응답에는 안 붙인다.
+    //
+    // 후보 카드를 클릭하지 않고 "1번"처럼 번호만 직접 타이핑한 경우에도,
+    // 카드 클릭과 똑같이 정확한 recipe_id 힌트를 몰래 같이 보낸다 — 이
+    // 힌트가 카드 클릭 시에만 붙던 게 사각지대였다: 후보가 여러 메뉴
+    // 이름에 걸쳐 있을 때 모델이 자기 대화 기억만으로 recipe_id를 찾다가
+    // 엉뚱한 레시피를 부르는 경우가 실제로 있었다.
+    const typedRecipeMatch = displayText.match(/^(\d+)\s*번?$/);
+    const typedRecipeId = typedRecipeMatch
+      ? lastCandidateRecipeIds[parseInt(typedRecipeMatch[1], 10) - 1]
+      : undefined;
+    const typedRecipeHint = typedRecipeId
+      ? ` (시스템 참고용 — 이 후보의 recipe_id는 정확히 "${typedRecipeId}"입니다. get_recipe 등 도구 호출에 이 값을 그대로 사용하고, 다른 값으로 추측하거나 대체하지 마세요.)`
+      : "";
     const sendText =
       overrideText === undefined
-        ? buildConditionPrefix() + displayText
+        ? buildConditionPrefix() + displayText + typedRecipeHint
         : sendOverrideText !== undefined
         ? sendOverrideText
         : displayText;
