@@ -973,6 +973,19 @@
   // budget/within_budget)를 직접 그린다 — get_recipe와 같은 이유로,
   // Gemini가 재료 목록을 텍스트로 옮겨 적다가 일부를 빠뜨리거나(실제로
   // 재현된 문제) 가격을 잘못 옮기는 일이 애초에 생길 수 없다.
+  // get_recipe/build_shopping_list 결과는 화면이 원본 데이터로 직접
+  // 그리고, 모델의 텍스트 답변(reply)은 그 밑에 붙는 짧은 한두 문장으로만
+  // 써야 한다(agent.py 6/9번 지침). 그런데 모델이 이 지침을 어기고 재료
+  // 목록이나 조리순서 전체를 다시 옮겨 적어버리는 경우가 실제로 있었다
+  // — 그러면 위(구조화된 카드)와 아래(모델이 다시 쓴 텍스트)에 같은
+  // 내용이 지저분하게 중복된다. 비정상적으로 길면(정상적인 한두 문장
+  // 범위를 넘으면) 통째로 버리고 짧은 기본 문구로 대체한다.
+  function sanitizeOutroText(text, fallback) {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return "";
+    return trimmed.length > 220 ? fallback : trimmed;
+  }
+
   function renderShoppingListInto(wrap, data, outroText) {
     const titleEl = document.createElement("div");
     titleEl.innerHTML = "<strong>장보기 목록</strong>";
@@ -1568,15 +1581,18 @@
         // 레시피 상세는 Gemini가 옮겨 적은 텍스트가 아니라 get_recipe의
         // 원본 응답으로 직접 그린다 — 모델 답변(reply)은 그 밑에 붙는
         // 짧은 대화(예: "장보기 상품도 찾아드릴까요?")로만 쓴다.
-        const { outroLines } = showBoard({ type: "recipe", detail: recipeDetail, outroText: reply }, sendBoardIndex);
+        const recipeOutro = sanitizeOutroText(reply, "레시피 준비됐어요! 왼쪽에서 확인해보세요 📋");
+        const { outroLines } = showBoard({ type: "recipe", detail: recipeDetail, outroText: recipeOutro }, sendBoardIndex);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 조리순서를 확인해보세요 📋";
         addBubble("bot", chatMsg);
       } else if (shoppingList) {
         // 장바구니 결과도 마찬가지로 build_shopping_list의 원본 응답을
         // 직접 그린다 — 재료가 많을 때 모델이 텍스트로 옮겨 적으면서
-        // 일부를 빠뜨리는 문제가 실제로 있었다.
-        const { outroLines } = showBoard({ type: "cart", data: shoppingList, outroText: reply }, sendBoardIndex);
-        if (pendingCacheKey) saveCachedCart(pendingCacheKey, shoppingList, reply);
+        // 일부를 빠뜨리거나(과거), 통째로 다시 옮겨 적어 중복 표시되는
+        // (지금) 문제가 실제로 있었다.
+        const cartOutro = sanitizeOutroText(reply, "장보기 목록 준비됐어요! 왼쪽에서 확인해보세요 📋");
+        const { outroLines } = showBoard({ type: "cart", data: shoppingList, outroText: cartOutro }, sendBoardIndex);
+        if (pendingCacheKey) saveCachedCart(pendingCacheKey, shoppingList, cartOutro);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
         addBubble("bot", chatMsg);
       } else if (isBigContent(reply)) {
