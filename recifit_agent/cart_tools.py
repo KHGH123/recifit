@@ -32,6 +32,27 @@ def _contains_any(name: str, terms: list[str]) -> bool:
     return any(_normalize(term) in normalized for term in terms if term)
 
 
+def to_base_unit(amount: float | None, unit: str | None) -> tuple[float, str] | None:
+    """amount/unit을 g·ml 같은 공통 기본 단위로 환산한다.
+
+    _UNIT_TO_BASE에 없는 단위(예: "개", "단", "마리")는 재료마다 포장 형태가
+    달라 서로 비교할 공통 기준이 없으므로 None을 돌려준다 — 호출하는 쪽이
+    "포장 1개로 간주" 같은 자기 나름의 fallback을 쓰게 한다
+    (_quantity_needed가 이미 그렇게 하고, ingredient_price_cache도 같은
+    규칙을 따른다).
+
+    Returns:
+        (환산된 양, 기본 단위) 튜플. 환산 불가하면 None.
+    """
+    if amount is None:
+        return None
+    base = _UNIT_TO_BASE.get(_normalize(unit))
+    if base is None:
+        return None
+    base_unit, factor = base
+    return amount * factor, base_unit
+
+
 def _quantity_needed(scaled_amount: float | None, ing_unit: str | None, pkg_amount: float | None, pkg_unit: str | None) -> int:
     if scaled_amount is None or pkg_amount is None or not pkg_unit or not ing_unit:
         return 1

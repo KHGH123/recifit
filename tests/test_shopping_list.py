@@ -25,6 +25,7 @@ def test_build_shopping_list_scales_searches_and_sums(monkeypatch):
         return {"results": []}
 
     monkeypatch.setattr(shopping_list, "search_products", fake_search_products)
+    monkeypatch.setattr(shopping_list, "record_price_observations", lambda *a, **k: None)
 
     ingredients = [
         {"name": "돼지고기", "amount": 300, "unit": "g", "raw": "돼지고기 300g"},
@@ -59,6 +60,7 @@ def test_build_shopping_list_excludes_allergy_terms_from_products(monkeypatch):
         return {"results": [_kurly_result("p1", 4000, 200, "g", "냉동 새우 200g")]}
 
     monkeypatch.setattr(shopping_list, "search_products", fake_search_products)
+    monkeypatch.setattr(shopping_list, "record_price_observations", lambda *a, **k: None)
 
     result = shopping_list.build_shopping_list(
         ingredients=[{"name": "새우", "amount": 200, "unit": "g", "raw": "새우 200g"}],
@@ -85,3 +87,38 @@ def test_build_shopping_list_handles_no_search_results(monkeypatch):
     assert result["selections"][0]["selected"] is None
     assert result["total_price"] == 0
     assert result["within_budget"] is None
+
+
+def test_build_shopping_list_caches_all_candidates_not_just_the_picked_one(monkeypatch):
+    # 나중에 [A]단계 예상가(estimate_recipe_price)가 실제 시세에 가깝게
+    # 계산되려면, 고른 최저가 상품 하나가 아니라 검색된 후보 전체의
+    # 단위가격이 캐시에 반영돼야 한다.
+    monkeypatch.setattr(
+        shopping_list,
+        "search_products",
+        lambda name: {
+            "results": [
+                _kurly_result("p1", 5000, 300, "g", "돼지고기 300g"),
+                _kurly_result("p2", 9000, 600, "g", "돼지고기 600g"),
+            ]
+        },
+    )
+    recorded = []
+    monkeypatch.setattr(
+        shopping_list,
+        "record_price_observations",
+        lambda name, unit, prices, sample_name=None, reset=False: recorded.append((name, unit, prices)),
+    )
+
+    shopping_list.build_shopping_list(
+        ingredients=[{"name": "돼지고기", "amount": 300, "unit": "g", "raw": "돼지고기 300g"}],
+        recipe_servings=2,
+        household_size=2,
+        exclude_terms=[],
+    )
+
+    assert len(recorded) == 1
+    name, unit, prices = recorded[0]
+    assert name == "돼지고기"
+    assert unit == "g"
+    assert sorted(prices) == sorted([5000 / 300, 9000 / 600])

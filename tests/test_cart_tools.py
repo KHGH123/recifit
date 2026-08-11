@@ -1,4 +1,4 @@
-from recifit_agent.cart_tools import pick_cheapest_product, scale_ingredient_amount, summarize_cart
+from recifit_agent.cart_tools import pick_cheapest_product, scale_ingredient_amount, summarize_cart, to_base_unit
 
 
 def _product(product_id, price, pkg_amount=None, pkg_unit=None, name="상품"):
@@ -73,6 +73,17 @@ def test_pick_cheapest_product_tolerates_non_string_pkg_unit():
     assert result["selected"]["product_id"] == "p1"
     assert result["quantity"] == 1
     assert result["subtotal"] == 3000
+
+
+def test_to_base_unit_converts_known_units():
+    assert to_base_unit(1.2, "kg") == (1200.0, "g")
+    assert to_base_unit(500, "g") == (500.0, "g")
+    assert to_base_unit(2, "큰술") == (30.0, "ml")
+
+
+def test_to_base_unit_returns_none_for_unconvertible_or_missing():
+    assert to_base_unit(3, "개") is None
+    assert to_base_unit(None, "g") is None
 
 
 def test_summarize_cart_sums_and_checks_budget():

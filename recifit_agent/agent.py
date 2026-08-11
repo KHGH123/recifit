@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from recifit_agent.conditions import record_conditions
 from recifit_agent.parsing_tools import parse_recipe_ingredients, parse_recipe_servings
+from recifit_agent.price_estimate import estimate_recipe_price
 from recifit_agent.recipe_detail_client import get_recipe
 from recifit_agent.search_tools import search_recipes
 from recifit_agent.shopping_list import build_shopping_list
@@ -141,18 +142,22 @@ root_agent = Agent(
            "레시피 ID" 같은 표현을 포함하지 않는다 — 사용자는 이름과
            설명만 보면 된다.
 
-        3. 후보 레시피마다, 도구를 호출하지 말고 네 일반 지식으로 재료
-           구성을 보고 "대략 이 정도 비용일 것" 정도의 rough한 예상 가격을
-           가늠한다. 이건 정확한 계산이 아니라 참고용 추정치다.
+        3. 후보 레시피마다 estimate_recipe_price를 호출한다 — 그 후보의
+           재료 원문(ingredients)과 인분 원문(servings), 1번에서 정한
+           household_size, meal_count를 그대로 인자로 넘긴다. 이 도구는
+           build_shopping_list가 실사용 중 실제로 찾아낸 마켓컬리 가격을
+           캐시에 쌓아둔 것을 조회해서(실시간 검색 없이 빠르게) 인원수·
+           끼니 수에 맞게 환산한 금액을 계산해준다.
 
-           이때 레시피 원문의 인분 표기(예: "2인분", "4인분이상")가 보통
-           기본값이라는 걸 유념하고, 1번에서 파악한 사용자의 실제 가구
-           인원수(household_size)와 meal_count(몇 끼 분량인지)에 맞게
-           대략 비례해서 늘리거나 줄여 가늠한다 — 예를 들어 레시피가
-           2인분 기준인데 사용자가 4인분을 원하면 대략 2배 정도로,
-           meal_count가 2면 거기서 또 2배로 가늠하는 식이다. 정확한
-           곱셈을 요구하는 게 아니라, "인원수를 무시한 기본 레시피
-           가격"을 그대로 보여주지 않기 위한 것이다.
+           결과의 known_total은 캐시로 실제 계산된 소계, unknown_ingredients는
+           캐시에 아직 없어서 계산하지 못한 재료 이름 목록이다.
+           unknown_ingredients에 있는 재료만 네 일반 지식으로 대략
+           가늠해(레시피 원문의 인분 기준을 household_size·meal_count에
+           맞게 비례해서 늘리거나 줄이는 것도 고려해서) known_total에
+           더한 값을 그 후보의 최종 예상가로 쓴다. priced_count가 0이면
+           (캐시에 아직 아무것도 없으면) 재료 전체를 네 일반 지식으로
+           가늠한다. 이렇게 만든 값도 정확한 계산이 아니라 참고용
+           추정치라는 건 동일하다.
 
         4. 사용자에게 후보 레시피 목록을 아래 형식으로 보여준다:
 
@@ -272,6 +277,7 @@ root_agent = Agent(
         record_conditions,
         parse_recipe_ingredients,
         parse_recipe_servings,
+        estimate_recipe_price,
         build_shopping_list,
         get_recipe,
     ],
