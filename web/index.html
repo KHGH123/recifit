@@ -472,32 +472,31 @@
     return { introLines, items, outroLines };
   }
 
-  let boardHistory = [];
-  let currentBoardText = null;
-
-  function renderBoard(text, { fromHistory = false } = {}) {
-    if (!fromHistory && currentBoardText !== null && currentBoardText !== text) {
-      boardHistory.push(currentBoardText);
+  // 마지막 줄이 질문으로 끝나면("~까요?", "~나요?" 등) 바로 누를 수 있는
+  // 빠른 응답 버튼(예/아니요)을 붙인다. 텍스트 보드/레시피 상세 보드가 공유.
+  function appendOutro(wrap, outroLines) {
+    for (const line of outroLines) {
+      appendLine(wrap, line);
     }
-    currentBoardText = text;
-
-    boardEl.innerHTML = "";
-
-    if (boardHistory.length) {
-      const backBtn = document.createElement("button");
-      backBtn.className = "board-back-btn";
-      backBtn.textContent = "← 이전으로";
-      backBtn.addEventListener("click", () => {
-        const prev = boardHistory.pop();
-        renderBoard(prev, { fromHistory: true });
-      });
-      boardEl.appendChild(backBtn);
+    const lastOutro = outroLines[outroLines.length - 1] || "";
+    if (/[?？]\s*$/.test(lastOutro)) {
+      const actions = document.createElement("div");
+      actions.className = "board-actions";
+      const yesBtn = document.createElement("button");
+      yesBtn.textContent = "네";
+      yesBtn.addEventListener("click", () => sendMessage("네"));
+      const noBtn = document.createElement("button");
+      noBtn.textContent = "아니요";
+      noBtn.addEventListener("click", () => sendMessage("아니요"));
+      actions.appendChild(yesBtn);
+      actions.appendChild(noBtn);
+      wrap.appendChild(actions);
     }
+  }
 
+  // 챗봇이 쓴 텍스트(후보 목록, 장바구니 요약 등)를 파싱해서 보드에 그린다.
+  function renderTextBoardInto(wrap, text) {
     const { introLines, items, outroLines } = parseBlocks(text);
-
-    const wrap = document.createElement("div");
-    wrap.className = "board-block";
 
     for (const line of introLines) {
       appendLine(wrap, line, { big: true });
@@ -505,7 +504,7 @@
 
     if (items.length) {
       // 항목 제목이 **굵게** 표시돼 있으면 레시피 후보 목록(카드 스타일),
-      // 아니면 조리순서 같은 단순 번호 목록으로 보여준다.
+      // 아니면 단순 번호 목록으로 보여준다.
       // (BOLD_RE는 /g 플래그가 있어 .test()에 그대로 쓰면 lastIndex가
       // 호출 사이에 남아 다음 문자열 검사를 그르칠 수 있어 indexOf로 확인)
       const looksLikeList = items.some((it) => it.title.indexOf("**") !== -1);
@@ -550,29 +549,101 @@
       }
     }
 
-    for (const line of outroLines) {
-      appendLine(wrap, line);
+    appendOutro(wrap, outroLines);
+    return { outroLines };
+  }
+
+  // get_recipe가 돌려준 원본 구조화 데이터(title/main_image/ingredients/
+  // instructions)를 직접 그린다 — Gemini가 옮겨 적은 텍스트를 파싱하는 게
+  // 아니라 도구 응답 그대로이므로, 이미지 URL 누락이나 내용 변형 같은
+  // 전사(transcription) 오류가 애초에 생길 수 없다.
+  function renderRecipeDetailInto(wrap, detail, outroText) {
+    if (detail.title) {
+      const titleEl = document.createElement("div");
+      titleEl.innerHTML = `<strong>${escapeHtml(detail.title)}</strong>`;
+      titleEl.style.fontSize = "17px";
+      wrap.appendChild(titleEl);
     }
 
-    // 마지막 줄이 질문으로 끝나면("~까요?", "~나요?" 등) 바로 누를 수 있는
-    // 빠른 응답 버튼을 보여준다 (예/아니요).
-    const lastOutro = outroLines[outroLines.length - 1] || "";
-    if (/[?？]\s*$/.test(lastOutro)) {
-      const actions = document.createElement("div");
-      actions.className = "board-actions";
-      const yesBtn = document.createElement("button");
-      yesBtn.textContent = "네";
-      yesBtn.addEventListener("click", () => sendMessage("네"));
-      const noBtn = document.createElement("button");
-      noBtn.textContent = "아니요";
-      noBtn.addEventListener("click", () => sendMessage("아니요"));
-      actions.appendChild(yesBtn);
-      actions.appendChild(noBtn);
-      wrap.appendChild(actions);
+    if (detail.description) {
+      const descEl = document.createElement("div");
+      descEl.className = "board-intro";
+      descEl.style.marginTop = "6px";
+      descEl.textContent = detail.description;
+      wrap.appendChild(descEl);
     }
+
+    if (detail.main_image) {
+      wrap.appendChild(makeImage(detail.main_image, { big: true }));
+    }
+
+    if (detail.ingredients && detail.ingredients.length) {
+      const subtitle = document.createElement("div");
+      subtitle.textContent = "재료";
+      subtitle.style.cssText = "font-weight:700; margin:16px 0 6px;";
+      wrap.appendChild(subtitle);
+      for (const ingredient of detail.ingredients) {
+        appendLine(wrap, "- " + ingredient);
+      }
+    }
+
+    if (detail.instructions && detail.instructions.length) {
+      const spacer = document.createElement("div");
+      spacer.style.height = "10px";
+      wrap.appendChild(spacer);
+
+      const ol = document.createElement("ol");
+      ol.className = "step-list";
+      for (const step of detail.instructions) {
+        const li = document.createElement("li");
+        li.innerHTML = inlineFormat(step.text || "");
+        if (step.image) li.appendChild(makeImage(step.image));
+        ol.appendChild(li);
+      }
+      wrap.appendChild(ol);
+    }
+
+    const outroLines = outroText ? [outroText] : [];
+    appendOutro(wrap, outroLines);
+    return { outroLines };
+  }
+
+  let boardHistory = [];
+  let currentBoardEntry = null;
+
+  function renderCurrentBoard() {
+    boardEl.innerHTML = "";
+
+    if (boardHistory.length) {
+      const backBtn = document.createElement("button");
+      backBtn.className = "board-back-btn";
+      backBtn.textContent = "← 이전으로";
+      backBtn.addEventListener("click", () => {
+        currentBoardEntry = boardHistory.pop();
+        renderCurrentBoard();
+      });
+      boardEl.appendChild(backBtn);
+    }
+
+    const wrap = document.createElement("div");
+    wrap.className = "board-block";
+
+    const result =
+      currentBoardEntry.type === "recipe"
+        ? renderRecipeDetailInto(wrap, currentBoardEntry.detail, currentBoardEntry.outroText)
+        : renderTextBoardInto(wrap, currentBoardEntry.text);
 
     boardEl.appendChild(wrap);
-    return { outroLines };
+    return result;
+  }
+
+  // 새 보드 내용을 보여주면서, 지금까지 보고 있던 내용은 "이전으로" 기록에 남긴다.
+  function showBoard(entry) {
+    if (currentBoardEntry !== null) {
+      boardHistory.push(currentBoardEntry);
+    }
+    currentBoardEntry = entry;
+    return renderCurrentBoard();
   }
 
   async function ensureSession() {
@@ -592,6 +663,23 @@
       }
     }
     return parts.join("\n").trim();
+  }
+
+  // 이번 턴에 특정 도구(예: get_recipe)가 호출됐다면 그 원본 응답을 찾아
+  // 돌려준다 — ADK의 /run 응답에는 최종 텍스트뿐 아니라 각 도구 호출의
+  // functionResponse 이벤트도 그대로 들어있어서, 모델이 옮겨 적은 텍스트를
+  // 다시 파싱하지 않고 실제 값을 바로 쓸 수 있다.
+  function findFunctionResponse(events, toolName) {
+    for (const event of events) {
+      const parts = event.content && event.content.parts;
+      if (!parts) continue;
+      for (const part of parts) {
+        if (part.functionResponse && part.functionResponse.name === toolName) {
+          return part.functionResponse.response;
+        }
+      }
+    }
+    return null;
   }
 
   async function sendMessage(overrideText) {
@@ -629,9 +717,17 @@
 
       const events = await res.json();
       const reply = extractReplyText(events) || "(응답 없음)";
+      const recipeDetail = findFunctionResponse(events, "get_recipe");
 
-      if (isBigContent(reply)) {
-        const { outroLines } = renderBoard(reply);
+      if (recipeDetail && !recipeDetail.error) {
+        // 레시피 상세는 Gemini가 옮겨 적은 텍스트가 아니라 get_recipe의
+        // 원본 응답으로 직접 그린다 — 모델 답변(reply)은 그 밑에 붙는
+        // 짧은 대화(예: "장보기 상품도 찾아드릴까요?")로만 쓴다.
+        const { outroLines } = showBoard({ type: "recipe", detail: recipeDetail, outroText: reply });
+        const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 조리순서를 확인해보세요 📋";
+        addBubble("bot", chatMsg);
+      } else if (isBigContent(reply)) {
+        const { outroLines } = showBoard({ type: "text", text: reply });
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
         addBubble("bot", chatMsg);
       } else {
