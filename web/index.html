@@ -58,6 +58,33 @@
     cursor: pointer;
   }
   .board-back-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .board-back-btn:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+  .board-nav { display: flex; gap: 8px; margin-bottom: 16px; }
+  .board-nav .board-back-btn { margin-bottom: 0; }
+  .cart-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin: 8px 0;
+  }
+  .cart-item .cart-item-text { font-size: 14px; line-height: 1.5; }
+  .cart-item .cart-item-buy {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .cart-item .cart-item-buy:hover { background: var(--accent); color: #08111f; }
   .board-block { margin-bottom: 22px; }
   .board-intro { color: var(--muted); font-size: 14px; margin-bottom: 14px; line-height: 1.6; }
   .board-bullet-line { padding-left: 4px; line-height: 1.6; }
@@ -418,6 +445,8 @@
     return img;
   }
 
+  const BULLET_RE = /^[-•*]\s+/;
+
   // 줄 하나를 이미지면 <img>, 아니면 텍스트로 렌더링해서 container에 붙인다
   function appendLine(container, line, { big } = {}) {
     if (isImageLine(line)) {
@@ -425,10 +454,52 @@
       return;
     }
     const p = document.createElement("div");
-    const isBullet = /^[-•]\s+/.test(line);
+    const isBullet = BULLET_RE.test(line);
     if (isBullet) p.className = "board-bullet-line";
-    p.innerHTML = inlineFormat(line.replace(/^[-•]\s+/, isBullet ? "• " : ""));
+    p.innerHTML = inlineFormat(line.replace(BULLET_RE, isBullet ? "• " : ""));
     container.appendChild(p);
+  }
+
+  // 순수 URL 한 줄(이미지 확장자 아님)인지 — 상품 구매 링크 줄을 찾을 때 쓴다.
+  function isBareUrlLine(line) {
+    if (isImageLine(line)) return false;
+    const trimmed = line.trim();
+    const matches = trimmed.match(URL_RE);
+    return !!(matches && matches.length === 1 && matches[0] === trimmed);
+  }
+
+  function appendProductCard(container, textLine, urlLine) {
+    const card = document.createElement("div");
+    card.className = "cart-item";
+    const text = document.createElement("div");
+    text.className = "cart-item-text";
+    text.innerHTML = inlineFormat(textLine.replace(BULLET_RE, ""));
+    const link = document.createElement("a");
+    link.className = "cart-item-buy";
+    link.href = urlLine.trim();
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "구매하러 가기 ↗";
+    card.appendChild(text);
+    card.appendChild(link);
+    container.appendChild(card);
+  }
+
+  // 줄 목록을 그린다 — 불릿 줄 바로 다음이 순수 URL 줄이면(상품명 + 구매
+  // 링크 패턴) 카드로 묶어서 보여주고, 그 외는 한 줄씩 그대로 그린다.
+  function renderLines(container, lines, { big } = {}) {
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const next = lines[i + 1];
+      if (BULLET_RE.test(line) && next !== undefined && isBareUrlLine(next)) {
+        appendProductCard(container, line, next);
+        i += 2;
+        continue;
+      }
+      appendLine(container, line, { big });
+      i += 1;
+    }
   }
 
   // 텍스트를 "번호 항목(+하위 줄)" 블록들과 그 사이의 일반 문단(줄 단위)으로 나눠 파싱
@@ -455,9 +526,9 @@
       // 하이픈/불릿으로 시작하거나 순수 이미지 URL인 줄만 "이 항목에 딸린
       // 내용"으로 본다 — 그 외(마무리 질문 등 일반 문장)는 항목이 끝난
       // 걸로 보고 outro로 분리한다.
-      const isSubLike = /^[-•]\s+/.test(line) || isImageLine(line);
+      const isSubLike = BULLET_RE.test(line) || isImageLine(line);
       if (currentItem && isSubLike) {
-        currentItem.subs.push(line.replace(/^[-•]\s+/, ""));
+        currentItem.subs.push(line.replace(BULLET_RE, ""));
         continue;
       }
 
@@ -474,10 +545,7 @@
 
   // 마지막 줄이 질문으로 끝나면("~까요?", "~나요?" 등) 바로 누를 수 있는
   // 빠른 응답 버튼(예/아니요)을 붙인다. 텍스트 보드/레시피 상세 보드가 공유.
-  function appendOutro(wrap, outroLines) {
-    for (const line of outroLines) {
-      appendLine(wrap, line);
-    }
+  function appendQuickReplyIfQuestion(wrap, outroLines) {
     const lastOutro = outroLines[outroLines.length - 1] || "";
     if (/[?？]\s*$/.test(lastOutro)) {
       const actions = document.createElement("div");
@@ -494,13 +562,16 @@
     }
   }
 
+  function appendOutro(wrap, outroLines) {
+    renderLines(wrap, outroLines);
+    appendQuickReplyIfQuestion(wrap, outroLines);
+  }
+
   // 챗봇이 쓴 텍스트(후보 목록, 장바구니 요약 등)를 파싱해서 보드에 그린다.
   function renderTextBoardInto(wrap, text) {
     const { introLines, items, outroLines } = parseBlocks(text);
 
-    for (const line of introLines) {
-      appendLine(wrap, line, { big: true });
-    }
+    renderLines(wrap, introLines, { big: true });
 
     if (items.length) {
       // 항목 제목이 **굵게** 표시돼 있으면 레시피 후보 목록(카드 스타일),
@@ -608,41 +679,68 @@
     return { outroLines };
   }
 
-  let boardHistory = [];
-  let currentBoardEntry = null;
+  // 브라우저 히스토리처럼 "지금까지 본 보드 내용"을 전부 타임라인에 쌓아두고
+  // 인덱스만 옮겨 다닌다 — 레시피 상세를 보다가 장바구니 결과로 넘어간 뒤
+  // 다시 레시피로 돌아갔다가 장바구니를 또 보고 싶을 때, 이미 한 번 받은
+  // 내용이면 에이전트를 다시 호출하지 않고 그 자리에서 바로 다시 보여준다.
+  let boardTimeline = [];
+  let boardIndex = -1;
 
   function renderCurrentBoard() {
     boardEl.innerHTML = "";
 
-    if (boardHistory.length) {
+    if (boardTimeline.length > 1) {
+      const nav = document.createElement("div");
+      nav.className = "board-nav";
+
       const backBtn = document.createElement("button");
       backBtn.className = "board-back-btn";
       backBtn.textContent = "← 이전으로";
+      backBtn.disabled = boardIndex <= 0;
       backBtn.addEventListener("click", () => {
-        currentBoardEntry = boardHistory.pop();
-        renderCurrentBoard();
+        if (boardIndex > 0) {
+          boardIndex -= 1;
+          renderCurrentBoard();
+        }
       });
-      boardEl.appendChild(backBtn);
+
+      const fwdBtn = document.createElement("button");
+      fwdBtn.className = "board-back-btn";
+      fwdBtn.textContent = "다음으로 →";
+      fwdBtn.disabled = boardIndex >= boardTimeline.length - 1;
+      fwdBtn.addEventListener("click", () => {
+        if (boardIndex < boardTimeline.length - 1) {
+          boardIndex += 1;
+          renderCurrentBoard();
+        }
+      });
+
+      nav.appendChild(backBtn);
+      nav.appendChild(fwdBtn);
+      boardEl.appendChild(nav);
     }
 
+    const entry = boardTimeline[boardIndex];
     const wrap = document.createElement("div");
     wrap.className = "board-block";
 
     const result =
-      currentBoardEntry.type === "recipe"
-        ? renderRecipeDetailInto(wrap, currentBoardEntry.detail, currentBoardEntry.outroText)
-        : renderTextBoardInto(wrap, currentBoardEntry.text);
+      entry.type === "recipe"
+        ? renderRecipeDetailInto(wrap, entry.detail, entry.outroText)
+        : renderTextBoardInto(wrap, entry.text);
 
     boardEl.appendChild(wrap);
     return result;
   }
 
-  // 새 보드 내용을 보여주면서, 지금까지 보고 있던 내용은 "이전으로" 기록에 남긴다.
+  // 에이전트가 새 내용을 보내왔을 때만 호출한다 — "이전으로/다음으로"로
+  // 옮겨 다닐 때는 이미 있는 타임라인을 그대로 재사용하고 이 함수를
+  // 부르지 않는다. 뒤로 갔다가 새 메시지를 보내면 그 뒤(다시 갈 수 있던
+  // "다음" 구간)는 더 이상 유효하지 않으므로 잘라내고 새 항목을 붙인다.
   function showBoard(entry) {
-    if (currentBoardEntry !== null) {
-      boardHistory.push(currentBoardEntry);
-    }
-    currentBoardEntry = entry;
+    boardTimeline = boardTimeline.slice(0, boardIndex + 1);
+    boardTimeline.push(entry);
+    boardIndex = boardTimeline.length - 1;
     return renderCurrentBoard();
   }
 
@@ -682,6 +780,85 @@
     return null;
   }
 
+  // 지금 어떤 도구가 호출됐는지에 따라 상태 문구를 다르게 보여준다 —
+  // [B-2]처럼 재료마다 순서대로 여러 번 도구를 호출하는 단계는 몇 분씩
+  // 걸릴 수 있는데, "생각 중..."만 떠 있으면 멈춘 건지 알 수가 없어서
+  // 실제로 뭘 하고 있는지 보여준다.
+  const TOOL_STATUS_LABELS = {
+    recipe_search_agent: "레시피 찾는 중...",
+    product_search_agent: "마켓컬리에서 상품 찾는 중...",
+    get_recipe: "조리순서 가져오는 중...",
+    search_products: "마켓컬리 검색 중...",
+    count_products: "검색 결과 개수 확인 중...",
+    get_product_detail: "상품 상세 확인 중...",
+    parse_recipe_ingredients: "재료 정리하는 중...",
+    parse_recipe_servings: "인분 정보 확인 중...",
+    scale_ingredient_amount: "필요한 양 계산 중...",
+    pick_cheapest_product: "최저가 상품 고르는 중...",
+    summarize_cart: "총 비용 계산하는 중...",
+  };
+
+  function statusLabelForEvent(event) {
+    const parts = event.content && event.content.parts;
+    if (!parts) return null;
+    for (const part of parts) {
+      if (part.functionCall && TOOL_STATUS_LABELS[part.functionCall.name]) {
+        return TOOL_STATUS_LABELS[part.functionCall.name];
+      }
+    }
+    return null;
+  }
+
+  // /run 대신 /run_sse로 호출해서, 전체 응답이 끝날 때까지 기다리지 않고
+  // 이벤트가 생성되는 즉시(SSE) 하나씩 받는다 — onEvent 콜백으로 상태
+  // 문구를 실시간으로 갱신할 수 있다. 최종적으로는 /run과 동일하게 전체
+  // 이벤트 배열을 돌려준다.
+  async function runAgentStreaming(sendText, onEvent) {
+    const res = await fetch(`${API_BASE}/run_sse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        app_name: APP_NAME,
+        user_id: userId,
+        session_id: sessionId,
+        new_message: { role: "user", parts: [{ text: sendText }] },
+        streaming: false,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = new Error(await res.text());
+      err.status = res.status;
+      throw err;
+    }
+
+    const events = [];
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let sepIndex;
+      while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, sepIndex);
+        buffer = buffer.slice(sepIndex + 2);
+        const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
+        if (!dataLine) continue;
+        const jsonText = dataLine.slice(5).trim();
+        if (!jsonText) continue;
+        const event = JSON.parse(jsonText);
+        events.push(event);
+        onEvent(event);
+      }
+    }
+
+    return events;
+  }
+
   async function sendMessage(overrideText) {
     const typed = overrideText !== undefined ? overrideText : inputEl.value;
     const displayText = typed.trim();
@@ -696,26 +873,26 @@
     sendBtn.disabled = true;
     statusEl.textContent = "생각 중...";
 
+    let productSearchCount = 0;
+
     try {
-      const res = await fetch(`${API_BASE}/run`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          app_name: APP_NAME,
-          user_id: userId,
-          session_id: sessionId,
-          new_message: { role: "user", parts: [{ text: sendText }] },
-          streaming: false,
-        }),
+      const events = await runAgentStreaming(sendText, (event) => {
+        if (event.content && event.content.parts) {
+          for (const part of event.content.parts) {
+            if (part.functionCall && part.functionCall.name === "product_search_agent") {
+              productSearchCount += 1;
+            }
+          }
+        }
+        const label = statusLabelForEvent(event);
+        if (label) {
+          statusEl.textContent =
+            label === TOOL_STATUS_LABELS.product_search_agent
+              ? `${label} (재료 ${productSearchCount}개째)`
+              : label;
+        }
       });
 
-      if (!res.ok) {
-        const errText = await res.text();
-        addBubble("bot", `오류가 발생했습니다 (${res.status}): ${errText}`);
-        return;
-      }
-
-      const events = await res.json();
       const reply = extractReplyText(events) || "(응답 없음)";
       const recipeDetail = findFunctionResponse(events, "get_recipe");
 
@@ -734,7 +911,11 @@
         addBubble("bot", reply);
       }
     } catch (err) {
-      addBubble("bot", `서버에 연결할 수 없습니다: ${err.message}`);
+      if (err.status) {
+        addBubble("bot", `오류가 발생했습니다 (${err.status}): ${err.message}`);
+      } else {
+        addBubble("bot", `서버에 연결할 수 없습니다: ${err.message}`);
+      }
     } finally {
       sendBtn.disabled = false;
       statusEl.textContent = "";
