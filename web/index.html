@@ -794,8 +794,36 @@
     appendQuickReplyIfQuestion(wrap, outroLines);
   }
 
+  // recipe_search_agent가 실제로 돌려준 후보 풀(pool, 여러 메뉴 이름으로
+  // 나눠 검색한 결과가 다 섞여 있고 화면엔 그중 일부만 추려서 보여줄 수
+  // 있다)에서, 화면에 표시된 순서대로 각 항목의 진짜 recipe_id를
+  // 찾아낸다. 단순히 "호출 순서 = 표시 순서"로 가정하면 모델이 후보를
+  // 추려서 보여줄 때 어긋나므로, 표시된 레시피 이름과 풀의 name을 맞춰
+  // 찾는다(이름이 겹치면 앞에서부터 아직 안 쓴 것을 순서대로 배정).
+  // 모델이 후보 이름을 그대로 안 쓰고 띄어쓰기를 살짝 다듬어서 보여줄
+  // 때가 있어서("떠먹는파스타" -> "떠먹는 파스타"), 공백을 무시하고
+  // 비교한다.
+  function normalizeRecipeName(name) {
+    return (name || "").replace(/\s+/g, "");
+  }
+
+  function resolveCandidateRecipeIds(items, candidatePool) {
+    if (!candidatePool || !candidatePool.length) return [];
+    const pool = candidatePool.slice();
+    const used = new Array(pool.length).fill(false);
+    return items.map((item) => {
+      const plainTitle = normalizeRecipeName(item.title.replace(/\*\*/g, ""));
+      let idx = pool.findIndex((c, i) => !used[i] && normalizeRecipeName(c.name) === plainTitle);
+      if (idx === -1) idx = pool.findIndex((c, i) => !used[i]);
+      if (idx === -1) return undefined;
+      used[idx] = true;
+      return pool[idx].recipe_id;
+    });
+  }
+
   // 챗봇이 쓴 텍스트(후보 목록, 장바구니 요약 등)를 파싱해서 보드에 그린다.
-  function renderTextBoardInto(wrap, text) {
+  // candidatePool은 레시피 후보 목록일 때만 쓰인다(recipe_id 매칭용).
+  function renderTextBoardInto(wrap, text, candidatePool) {
     const { introLines, items, outroLines } = parseBlocks(text);
 
     renderLines(wrap, introLines, { big: true });
@@ -808,7 +836,9 @@
       const looksLikeList = items.some((it) => it.title.indexOf("**") !== -1);
 
       if (looksLikeList) {
-        for (const item of items) {
+        const resolvedIds = resolveCandidateRecipeIds(items, candidatePool);
+        lastCandidateRecipeIds = resolvedIds;
+        items.forEach((item, i) => {
           const card = document.createElement("div");
           card.className = "item-card";
           card.title = "클릭하면 이 레시피를 선택합니다";
@@ -829,9 +859,19 @@
             }
             if (ul.children.length) card.appendChild(ul);
           }
-          card.addEventListener("click", () => sendMessage(`${item.num}번`));
+          card.addEventListener("click", () => {
+            const recipeId = resolvedIds[i];
+            const displayMsg = `${item.num}번`;
+            // recipe_id를 알고 있으면 메시지에 몰래 같이 실어 보낸다 —
+            // 채팅 버블에는 "1번"만 보이고(displayMsg), 모델에게는 정확한
+            // recipe_id까지 같이 전달된다.
+            const sendMsg = recipeId
+              ? `${displayMsg} (시스템 참고용 — 이 후보의 recipe_id는 정확히 "${recipeId}"입니다. get_recipe 등 도구 호출에 이 값을 그대로 사용하고, 다른 값으로 추측하거나 대체하지 마세요.)`
+              : undefined;
+            sendMessage(displayMsg, sendMsg);
+          });
           wrap.appendChild(card);
-        }
+        });
       } else {
         const ol = document.createElement("ol");
         ol.className = "step-list";
@@ -958,7 +998,7 @@
     const result =
       entry.type === "recipe"
         ? renderRecipeDetailInto(wrap, entry.detail, entry.outroText)
-        : renderTextBoardInto(wrap, entry.text);
+        : renderTextBoardInto(wrap, entry.text, entry.candidatePool);
 
     boardEl.appendChild(wrap);
     return result;
@@ -1018,6 +1058,28 @@
     }
     return null;
   }
+
+  // toolName이 이번 턴에 여러 번 호출됐을 수 있을 때(예: recipe_search_agent를
+  // 메뉴 이름마다 여러 번 호출) 그 응답 전부를 호출된 순서 그대로 돌려준다.
+  function findAllFunctionResponses(events, toolName) {
+    const results = [];
+    for (const event of events) {
+      const parts = event.content && event.content.parts;
+      if (!parts) continue;
+      for (const part of parts) {
+        if (part.functionResponse && part.functionResponse.name === toolName) {
+          results.push(part.functionResponse.response);
+        }
+      }
+    }
+    return results;
+  }
+
+  // 후보 목록에서 "N번"을 화면에 표시된 순서대로 recipe_id에 매핑해둔다
+  // — 사용자가 번호로 고르면, 모델이 자기 대화 기억만으로 recipe_id를
+  // 다시 찾게 하지 않고 이 정확한 값을 메시지에 실어 보낸다(모델이 가끔
+  // 후보가 많을 때 엉뚱한 레시피를 불러오는 문제가 있었다).
+  let lastCandidateRecipeIds = [];
 
   // 지금 어떤 도구가 호출됐는지에 따라 상태 문구를 다르게 보여준다 —
   // [B-2]처럼 재료마다 순서대로 여러 번 도구를 호출하는 단계는 몇 분씩
@@ -1294,7 +1356,12 @@
   let isBusy = false;
   let activeAbortController = null;
 
-  async function sendMessage(overrideText) {
+  // sendOverrideText: 채팅창에 "보여줄" 문구(overrideText)와 실제로
+  // 에이전트에게 "보낼" 문구를 다르게 하고 싶을 때 쓴다 — 후보 카드
+  // 클릭 시 "1번을 선택합니다" 뒤에 정확한 recipe_id를 몰래 덧붙여
+  // 보내서, 모델이 자기 기억만으로 recipe_id를 다시 찾다가 틀리는 걸
+  // 막는 용도다.
+  async function sendMessage(overrideText, sendOverrideText) {
     if (isBusy) return;
 
     const typed = overrideText !== undefined ? overrideText : inputEl.value;
@@ -1310,7 +1377,12 @@
 
     // 조건 바(인원수/예산/제외 재료)는 직접 타이핑한 메시지에만 자동으로
     // 덧붙인다 — 카드 클릭이나 "네"/"아니요" 같은 빠른 응답에는 안 붙인다.
-    const sendText = overrideText === undefined ? buildConditionPrefix() + displayText : displayText;
+    const sendText =
+      overrideText === undefined
+        ? buildConditionPrefix() + displayText
+        : sendOverrideText !== undefined
+        ? sendOverrideText
+        : displayText;
     if (overrideText === undefined) lastUserQueryText = sendText;
 
     addBubble("user", displayText);
@@ -1387,6 +1459,14 @@
         syncConditionBarFrom(conditions);
       }
 
+      // recipe_search_agent가 메뉴 이름마다 여러 번 호출됐을 수 있으니
+      // (한식/양식처럼 범주로 물었을 때) 그 결과를 전부 모아 후보 풀로
+      // 만든다 — 화면에 표시된 순서와 이 풀의 순서가 항상 같지는
+      // 않으므로(모델이 추려서 보여줄 수 있음), 실제 recipe_id는 렌더링
+      // 시점에 이름으로 다시 맞춰 찾는다(resolveCandidateRecipeIds).
+      const recipeSearchResponses = findAllFunctionResponses(events, "recipe_search_agent");
+      const candidatePool = recipeSearchResponses.flatMap((r) => r.candidates || []);
+
       if (recipeDetail && !recipeDetail.error) {
         // 레시피 상세는 Gemini가 옮겨 적은 텍스트가 아니라 get_recipe의
         // 원본 응답으로 직접 그린다 — 모델 답변(reply)은 그 밑에 붙는
@@ -1395,7 +1475,7 @@
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 조리순서를 확인해보세요 📋";
         addBubble("bot", chatMsg);
       } else if (isBigContent(reply)) {
-        const { outroLines } = showBoard({ type: "text", text: reply }, sendBoardIndex);
+        const { outroLines } = showBoard({ type: "text", text: reply, candidatePool }, sendBoardIndex);
         if (pendingCacheKey) saveCachedCart(pendingCacheKey, reply);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
         addBubble("bot", chatMsg);
