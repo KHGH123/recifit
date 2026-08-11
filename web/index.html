@@ -735,7 +735,13 @@
       const numMatch = line.match(NUMBERED_LINE_RE);
       if (numMatch) {
         seenItem = true;
-        currentItem = { num: numMatch[1], title: numMatch[2], subs: [] };
+        // 후보 레시피 이름 뒤에는 모델이 [[recipe_id]] 마커를 붙여
+        // 보낸다(agent.py 4번 지침) — 이름을 다시 검색·매칭할 필요 없이
+        // 정확한 recipe_id를 그대로 뽑아 쓰고, 마커 자체는 화면에 안
+        // 보이게 지운다.
+        const ridMatch = numMatch[2].match(/\[\[(\S+?)\]\]\s*$/);
+        const title = ridMatch ? numMatch[2].slice(0, ridMatch.index).trim() : numMatch[2];
+        currentItem = { num: numMatch[1], title, recipeId: ridMatch ? ridMatch[1] : undefined, subs: [] };
         items.push(currentItem);
         continue;
       }
@@ -816,8 +822,12 @@
     const used = new Array(pool.length).fill(false);
     return items.map((item) => {
       const plainTitle = normalizeRecipeName(item.title.replace(/\*\*/g, ""));
-      let idx = pool.findIndex((c, i) => !used[i] && normalizeRecipeName(c.name) === plainTitle);
-      if (idx === -1) idx = pool.findIndex((c, i) => !used[i]);
+      const idx = pool.findIndex((c, i) => !used[i] && normalizeRecipeName(c.name) === plainTitle);
+      // 이름이 정확히 안 맞으면 관련 없는 후보를 아무거나 골라 쓰지 않는다
+      // — 틀린 recipe_id를 "정답"이라며 힌트로 붙이는 것이, 힌트를 아예
+      // 안 붙이고 모델의 판단에 맡기는 것보다 훨씬 위험하다(모델은 힌트가
+      // 있으면 그 값을 의심 없이 그대로 쓰도록 지시돼 있다). 매칭 안 되는
+      // 항목은 undefined로 두고, 힌트 없이 모델이 직접 판단하게 한다.
       if (idx === -1) return undefined;
       used[idx] = true;
       return pool[idx].recipe_id;
@@ -839,7 +849,13 @@
       const looksLikeList = items.some((it) => it.title.indexOf("**") !== -1);
 
       if (looksLikeList) {
-        const resolvedIds = resolveCandidateRecipeIds(items, candidatePool);
+        // 이름 매칭은 [[recipe_id]] 마커가 없는 항목에만 쓰는 폴백이다
+        // — 마커가 있으면(정상 케이스) 그 값을 그대로 쓰고, 같은 이름의
+        // 후보가 여러 개라도 매칭이 필요 없다.
+        const fallbackIds = candidatePool && candidatePool.length
+          ? resolveCandidateRecipeIds(items, candidatePool)
+          : [];
+        const resolvedIds = items.map((item, i) => item.recipeId || fallbackIds[i]);
         lastCandidateRecipeIds = resolvedIds;
         items.forEach((item, i) => {
           const card = document.createElement("div");
