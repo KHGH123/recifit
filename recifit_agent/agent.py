@@ -6,9 +6,10 @@ from google.genai import types
 from pydantic import BaseModel
 
 from recifit_agent.cart_tools import pick_cheapest_product, scale_ingredient_amount, summarize_cart
+from recifit_agent.kurly_client import count_products, get_product_detail, search_products
 from recifit_agent.parsing_tools import parse_recipe_ingredients, parse_recipe_servings
 from recifit_agent.recipe_detail_client import get_recipe
-from recifit_agent.search_tools import search_products, search_recipes
+from recifit_agent.search_tools import search_recipes
 
 model_name = os.getenv("MODEL", "gemini-2.5-flash")
 
@@ -70,24 +71,35 @@ recipe_search_agent = Agent(
 )
 
 # ---------------------------------------------------------------------------
-# 상품 검색 AI: 재료 하나에 대해 데이터스토어에서 후보 상품을 찾는다.
+# 상품 검색 AI: 재료 하나에 대해 마켓컬리에서 실시간으로 후보 상품을 찾는다.
 # ---------------------------------------------------------------------------
 product_search_agent = Agent(
     name="product_search_agent",
     model=model_name,
-    description="재료 하나를 입력받아 그 재료를 구매할 수 있는 상품 후보를 데이터스토어에서 검색한다.",
+    description="재료 하나를 입력받아 마켓컬리에서 그 재료를 구매할 수 있는 상품 후보를 실시간으로 검색한다.",
     instruction="""
-        - search_products로 요청받은 재료명을 검색해서 상품 후보들을 찾는다.
-        - 가구 인원수가 많다는 정보를 받으면, 대용량(pkg_amount가 큰) 상품도
-          포함해서 후보로 제시한다 — 최종적으로 어떤 게 저렴한지는 계산
-          도구가 판단한다.
+        - search_products로 요청받은 재료명을 검색해서 상품 후보들을 찾는다
+          (품절 상품은 이미 결과에서 제외되어 있다).
+        - 검색어가 너무 포괄적이어서(예: "고기") 결과가 아주 많을 것 같으면
+          count_products로 전체 결과 규모를 먼저 확인해도 된다 — 너무
+          광범위하면 더 구체적인 재료명으로 search_products를 다시
+          호출한다.
+        - 가구 인원수가 많거나 여러 끼/오래 먹을 계획이라는 정보를 받으면,
+          대용량(pkg_amount가 큰) 상품도 함께 후보로 제시한다 — 소용량과
+          대용량을 둘 다 후보에 넣어야, 실제로 어느 쪽이 더 싼지는 계산
+          도구(pick_cheapest_product)가 필요한 총량 기준으로 정확히
+          판단할 수 있다.
+        - search_products 결과의 pkg_amount가 비어 있어 판단이 애매한 후보가
+          있으면, get_product_detail로 그 상품 하나만 보조 확인해도 된다
+          (모든 후보에 매번 호출할 필요는 없다).
+        - 가격/재고 정보는 조회 시점 기준 참고값이라는 점을 유념한다.
         - 출력은 반드시 정해진 구조(candidates 목록)로만 작성한다. 설명
           문장을 따로 쓰지 않는다. 각 필드(product_id, name, price,
-          pkg_amount, pkg_unit, vendor, url)는 search_products가 돌려준
-          값을 한 글자도 바꾸지 않고 그대로 옮겨 적는다 — 특히 product_id와
-          price는 절대 스스로 만들어내지 않는다.
+          pkg_amount, pkg_unit, vendor, url)는 도구가 돌려준 값을 한 글자도
+          바꾸지 않고 그대로 옮겨 적는다 — 특히 product_id와 price는 절대
+          스스로 만들어내지 않는다.
     """,
-    tools=[search_products],
+    tools=[search_products, count_products, get_product_detail],
     output_schema=ProductSearchOutput,
 )
 
@@ -124,7 +136,11 @@ root_agent = Agent(
         [A] 처음 요청을 받았을 때:
 
         1. 사용자 요청에서 다음 조건을 추출한다: 원하는 음식/재료, 예산(원),
-           가구 인원수(household_size), 알레르기/제외 재료 목록.
+           가구 인원수(household_size), 알레르기/제외 재료 목록, 몇 끼/며칠
+           분량을 만들어 먹고 싶은지(meal_count). "이틀치", "일주일 내내",
+           "오래 두고 먹고 싶다"처럼 여러 번 먹을 의사가 보이면 그에 맞는
+           횟수(예: 2, 7)로 meal_count를 정하고, 별다른 언급이 없으면
+           meal_count=1(한 끼)로 둔다.
            빠진 조건이 있어도 되묻지 말고 바로 진행한다 — 예산이 없으면
            "예산 제한 없음"으로, 가구 인원수가 없으면 1인분(household_size=1)
            으로, 알레르기/제외 재료가 없으면 빈 목록으로 간주하고 다음 단계로
@@ -226,20 +242,28 @@ root_agent = Agent(
            분류하고, 나머지를 "조건을 충족한 재료" 목록으로 삼는다.
 
         8. 조건을 충족한 재료마다:
-           a. scale_ingredient_amount로 가구 인원수에 맞게 필요량을 환산한다
-              (직접 곱셈하지 말고 반드시 이 도구를 호출한다).
+           a. scale_ingredient_amount로 가구 인원수와 meal_count(몇 끼
+              분량인지)에 맞게 필요량을 환산한다 (직접 곱셈하지 말고
+              반드시 이 도구를 호출하며, 1번에서 정한 meal_count를 그대로
+              전달한다).
            b. product_search_agent를 호출해 상품 후보를 받는다. 가구
-              인원수가 많으면(예: 4인 이상) 대용량 상품도 함께 찾도록
-              요청 문구에 인원수를 포함시킨다.
+              인원수가 많거나(예: 4인 이상) meal_count가 1보다 크면(여러
+              끼 먹을 계획이면) 대용량 상품도 함께 찾도록 요청 문구에 그
+              정보를 포함시킨다 — 어떤 게 실제로 더 저렴한지는 다음 단계의
+              계산 도구가 필요량 기준으로 판단한다.
            c. pick_cheapest_product로 필요량을 채우는 가장 저렴한 상품을
               고른다 (직접 비교하지 말고 반드시 이 도구를 호출한다).
 
         9. summarize_cart로 총액과 예산 이내 여부를 구한다 (직접 합산하지
            말고 반드시 이 도구를 호출한다). 레시피명, 인분 환산 결과,
            재료별 선택 상품과 수량, 총 예상 비용, 예산 이내 여부를 자연
-           스러운 한국어로 정리해서 보여준다. 상품을 찾지 못한 재료는
-           따로 안내한다. 이 금액은 3번의 참고용 추정치와 다를 수 있다는
-           것도 짧게 언급한다.
+           스러운 한국어로 정리해서 보여준다. 재료별 선택 상품 줄마다,
+           pick_cheapest_product가 돌려준 그 상품의 url 값을 바로 다음
+           줄에 그대로 적는다(다른 줄과 합치지 말고, 요약하거나 텍스트로
+           바꾸지 않는다) — 사용자가 그 링크를 눌러 실제 구매 페이지로
+           바로 이동할 수 있어야 한다. 상품을 찾지 못한 재료는 따로
+           안내한다(이 경우 url은 없다). 이 금액은 3번의 참고용 추정치와
+           다를 수 있다는 것도 짧게 언급한다.
 
         10. 마지막으로, 1번에서 사용자가 직접 말하지 않아 기본값으로 채운
            조건이 있다면, 그 조건들을 추가로 알려주면 더 정확한 추천을

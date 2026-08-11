@@ -43,18 +43,33 @@ def _quantity_needed(scaled_amount: float | None, ing_unit: str | None, pkg_amou
     return max(1, math.ceil(needed_base / pkg_base_amount))
 
 
-def scale_ingredient_amount(amount: float | None, recipe_servings: float, household_size: float) -> dict:
-    """레시피 재료량을 사용자 가구 인원수에 맞게 환산한다.
+def scale_ingredient_amount(
+    amount: float | None,
+    recipe_servings: float,
+    household_size: float,
+    meal_count: float = 1.0,
+) -> dict:
+    """레시피 재료량을 사용자 가구 인원수·먹으려는 횟수에 맞게 환산한다.
+
+    meal_count로 필요한 총량을 정확히 키워주면, 이어지는
+    pick_cheapest_product가 그 총량 기준으로 최저가를 계산하면서 대용량
+    상품이 실제로 더 저렴한 경우 자동으로 그걸 고르게 된다 — "대용량이
+    유리한지"는 이 함수가 아니라 pick_cheapest_product가 실제 가격으로
+    판단한다.
 
     Args:
         amount: 레시피 기준 재료량 (예: 돼지고기 300g이면 300). 알 수 없으면 None.
         recipe_servings: 레시피가 기준으로 하는 인분 수 (예: 2).
         household_size: 사용자의 실제 가구 인원수 (예: 4).
+        meal_count: 이 레시피를 만들어 먹으려는 횟수(끼니 수). 한 번만
+            먹으면 1(기본값). "이틀치"/"일주일 내내"/"오래 먹고 싶다"처럼
+            여러 번 먹을 계획이면 그 횟수(예: 2, 7)를 전달한다.
 
     Returns:
         scaled_amount(환산된 양), scale_factor(배율)를 담은 dict.
     """
     scale_factor = (household_size / recipe_servings) if recipe_servings else 1.0
+    scale_factor *= meal_count or 1.0
     scaled = round(amount * scale_factor, 4) if amount is not None else None
     return {"scaled_amount": scaled, "scale_factor": scale_factor}
 
