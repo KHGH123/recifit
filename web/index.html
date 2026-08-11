@@ -242,6 +242,7 @@
   #msgInput { flex: 1; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; }
   #sendBtn { padding: 11px 18px; border-radius: 10px; border: none; background: var(--bubble-user); color: white; font-weight: 600; cursor: pointer; }
   #sendBtn:disabled { opacity: 0.5; cursor: default; }
+  #board a, .bubble a { color: var(--accent); word-break: break-all; }
 </style>
 </head>
 <body>
@@ -311,6 +312,7 @@
   const excludeInput = document.getElementById("excludeInput");
 
   const IMAGE_URL_RE = /https?:\/\/[^\s()<>"']+\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s()<>"']*)?/gi;
+  const URL_RE = /https?:\/\/[^\s()<>"']+/g;
   const NUMBERED_LINE_RE = /^\s*(\d+)[.)]\s+(.*)$/;
   const BOLD_RE = /\*\*(.+?)\*\*/g;
 
@@ -371,6 +373,9 @@
   function inlineFormat(text) {
     let escaped = escapeHtml(text);
     escaped = escaped.replace(BOLD_RE, "<strong>$1</strong>");
+    // 상품 구매 링크처럼 줄 안에 섞여 나오는 URL은 새 탭으로 열리는 링크로
+    // 바꿔준다 (전체 줄이 이미지 URL인 경우는 appendLine에서 별도 처리).
+    escaped = escaped.replace(URL_RE, (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
     return escaped;
   }
 

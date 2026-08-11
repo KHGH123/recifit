@@ -24,6 +24,18 @@ def test_scale_ingredient_amount_handles_none_amount():
     assert result["scaled_amount"] is None
 
 
+def test_scale_ingredient_amount_applies_meal_count_multiplier():
+    result = scale_ingredient_amount(amount=300, recipe_servings=2, household_size=2, meal_count=3)
+    assert result["scale_factor"] == 3.0
+    assert result["scaled_amount"] == 900.0
+
+
+def test_scale_ingredient_amount_defaults_meal_count_to_one():
+    with_default = scale_ingredient_amount(amount=300, recipe_servings=2, household_size=4)
+    explicit_one = scale_ingredient_amount(amount=300, recipe_servings=2, household_size=4, meal_count=1)
+    assert with_default == explicit_one
+
+
 def test_pick_cheapest_product_chooses_lowest_total_cost():
     candidates = [
         _product("p1", price=8000, pkg_amount=300, pkg_unit="g", name="비싼 돼지고기 300g"),
