@@ -1,0 +1,13 @@
+.venv/
+.venv*/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.gitignore
+.adk/
+recifit_agent/.env
+*.json.key
+service-account-key.json
+*-service-account*.json
+tests/

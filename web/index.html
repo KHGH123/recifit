@@ -419,8 +419,11 @@
   </div>
 
 <script>
-  // adk api_server 설정 — 다른 주소/포트로 띄웠으면 여기만 바꾸면 됨
-  const API_BASE = "http://127.0.0.1:8000";
+  // 로컬 개발(이 파일을 5500 포트 http.server로 따로 띄운 경우)에서는
+  // 백엔드가 8000번 포트에 별도로 떠 있고, 배포 환경(Cloud Run 등)에서는
+  // server.py가 이 파일도 같은 서비스에서 같이 서빙하니 같은 origin으로
+  // 상대 경로 호출하면 된다.
+  const API_BASE = location.port === "5500" ? "http://127.0.0.1:8000" : "";
   const APP_NAME = "recifit_agent"; // recifit_agent/agent.py의 root_agent.name과 동일해야 함
 
   const userId = "web-" + Math.random().toString(36).slice(2, 10);

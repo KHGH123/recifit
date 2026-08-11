@@ -21,6 +21,7 @@ load_dotenv(os.path.join(AGENTS_DIR, "recifit_agent", ".env"))
 
 import uvicorn  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
 from google.adk.cli.fast_api import get_fast_api_app  # noqa: E402
 
 from recifit_agent.favorites_store import (  # noqa: E402
@@ -75,6 +76,14 @@ async def remove_favorite_recipe(favorite_id: str, device_id: str):
     if not delete_favorite_recipe(device_id, favorite_id):
         raise HTTPException(status_code=404, detail="Not found")
     return {"status": "ok"}
+
+
+# web/index.html을 같은 서비스에서 같이 서빙한다 — 로컬 개발 때는 이걸
+# 따로 python -m http.server로 띄우지만, 배포 환경에서는 백엔드/프론트를
+# 별도 서비스로 안 나누는 게 CORS 걱정도 없고 더 간단하다. 반드시 API
+# 라우트들을 다 등록한 "다음"에 mount해야 한다 — "/"에 마운트된 정적
+# 파일 서버가 더 구체적인 경로들을 가리지 않게 하기 위함이다.
+app.mount("/", StaticFiles(directory=os.path.join(AGENTS_DIR, "web"), html=True), name="web")
 
 
 if __name__ == "__main__":
