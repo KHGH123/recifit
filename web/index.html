@@ -32,8 +32,38 @@
     font-weight: 700;
     font-size: 18px;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
   header span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  #favoritesBtn {
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #favoritesBtn:hover { border-color: var(--accent); color: var(--accent); }
+  .fav-star-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 14px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .fav-star-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .fav-star-btn:disabled { opacity: 0.6; cursor: default; }
+  .fav-condition { color: var(--muted); font-size: 12px; margin-top: 4px; }
 
   #main { flex: 1; display: flex; min-height: 0; }
 
@@ -205,8 +235,8 @@
     margin-left: 6px;
   }
 
-  /* 제외 재료 모달 */
-  #modalOverlay {
+  /* 모달 공통(제외 재료 / 즐겨찾기) */
+  .modal-overlay {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
@@ -215,17 +245,19 @@
     justify-content: center;
     z-index: 10;
   }
-  #modalOverlay.open { display: flex; }
-  #modalBox {
+  .modal-overlay.open { display: flex; }
+  .modal-box {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 14px;
     padding: 22px;
     width: 380px;
     max-width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
   }
-  #modalBox h3 { margin: 0 0 10px; font-size: 16px; }
-  #modalBox p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  .modal-box h3 { margin: 0 0 10px; font-size: 16px; }
+  .modal-box p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
   #excludeInput {
     width: 100%;
     min-height: 80px;
@@ -237,8 +269,8 @@
     font-size: 14px;
     resize: vertical;
   }
-  #modalActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-  #modalActions button {
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .modal-actions button {
     padding: 8px 16px;
     border-radius: 8px;
     border: 1px solid var(--border);
@@ -248,6 +280,32 @@
     font-size: 13px;
   }
   #modalSave { background: var(--bubble-user); border-color: var(--bubble-user); color: white; font-weight: 600; }
+  .fav-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+  .fav-list-item:hover { border-color: var(--accent); }
+  .fav-list-item .fav-list-text { font-size: 13px; line-height: 1.5; }
+  .fav-list-item .fav-list-title { font-weight: 700; }
+  .fav-list-item .fav-list-del {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .fav-list-item .fav-list-del:hover { border-color: #e05555; color: #e05555; }
 
   /* 오른쪽: 채팅 */
   #chatCol { flex: 1; display: flex; flex-direction: column; min-width: 320px; }
@@ -273,7 +331,10 @@
 </style>
 </head>
 <body>
-  <header>ReciFit <span>예산에 맞는 레시피 &amp; 장보기 도우미</span></header>
+  <header>
+    <div>ReciFit <span>예산에 맞는 레시피 &amp; 장보기 도우미</span></div>
+    <button id="favoritesBtn" type="button">⭐ 즐겨찾기</button>
+  </header>
   <div id="main">
     <div id="board"><div class="placeholder">레시피 후보 목록이나 조리순서처럼 긴 내용이 여기 크게 표시됩니다.</div></div>
     <div id="chatCol">
@@ -305,14 +366,25 @@
     </div>
   </div>
 
-  <div id="modalOverlay">
-    <div id="modalBox">
+  <div id="modalOverlay" class="modal-overlay">
+    <div id="modalBox" class="modal-box">
       <h3>피하고 싶은 음식/재료</h3>
       <p>쉼표(,)나 줄바꿈으로 여러 개 입력하세요. 예: 새우, 계란, 오이</p>
       <textarea id="excludeInput" placeholder="예: 새우, 계란"></textarea>
-      <div id="modalActions">
+      <div class="modal-actions">
         <button id="modalCancel" type="button">취소</button>
         <button id="modalSave" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="favoritesOverlay" class="modal-overlay">
+    <div class="modal-box">
+      <h3>즐겨찾기</h3>
+      <p>레시피 상세 화면의 "즐겨찾기 추가" 버튼으로 저장할 수 있어요. 클릭하면 그때 조건 그대로 바로 불러옵니다.</p>
+      <div id="favoritesList"></div>
+      <div class="modal-actions">
+        <button id="favoritesClose" type="button">닫기</button>
       </div>
     </div>
   </div>
@@ -324,6 +396,23 @@
 
   const userId = "web-" + Math.random().toString(36).slice(2, 10);
   const sessionId = "session-" + Math.random().toString(36).slice(2, 10);
+
+  // userId/sessionId는 새로고침마다 새로 생기지만, 즐겨찾기는 나중에도
+  // 봐야 하니 localStorage에 한 번 만들어서 이 브라우저에 계속 남겨둔다.
+  function getDeviceId() {
+    let id = localStorage.getItem("recifit_device_id");
+    if (!id) {
+      id = "device-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem("recifit_device_id", id);
+    }
+    return id;
+  }
+  const deviceId = getDeviceId();
+
+  // 즐겨찾기할 때 "그 당시 조건"으로 같이 저장할, 방금 사용자가 직접
+  // 타이핑해서 보낸 원문(조건 바 값이 앞에 붙은 전체 문장) — 조건 바에
+  // 없는 자유 텍스트 조건("이틀치 넉넉하게" 등)까지 그대로 남기기 위함.
+  let lastUserQueryText = "";
 
   const chatEl = document.getElementById("chat");
   const boardEl = document.getElementById("board");
@@ -337,6 +426,10 @@
   const excludeBadge = document.getElementById("excludeBadge");
   const modalOverlay = document.getElementById("modalOverlay");
   const excludeInput = document.getElementById("excludeInput");
+  const favoritesBtn = document.getElementById("favoritesBtn");
+  const favoritesOverlay = document.getElementById("favoritesOverlay");
+  const favoritesListEl = document.getElementById("favoritesList");
+  const favoritesClose = document.getElementById("favoritesClose");
 
   const IMAGE_URL_RE = /https?:\/\/[^\s()<>"']+\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s()<>"']*)?/gi;
   const URL_RE = /https?:\/\/[^\s()<>"']+/g;
@@ -644,6 +737,10 @@
       wrap.appendChild(descEl);
     }
 
+    if (detail.id) {
+      wrap.appendChild(makeFavoriteButton(detail));
+    }
+
     if (detail.main_image) {
       wrap.appendChild(makeImage(detail.main_image, { big: true }));
     }
@@ -886,6 +983,144 @@
     }).catch(() => {});
   }
 
+  // ---- 즐겨찾기 (사용자가 명시적으로 저장, 나중에 목록에서 다시 봄) ----
+
+  function makeFavoriteButton(detail) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "fav-star-btn";
+    btn.textContent = "☆ 즐겨찾기 추가";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.textContent = "저장 중...";
+      const conditionSummary =
+        lastUserQueryText ||
+        `인원수 ${householdSize}명, 예산 ${budgetInputEl.value.trim() || "제한 없음"}${excludedItems.length ? ", " + excludedItems.join(", ") + " 제외" : ""}`;
+      try {
+        await fetch(`${API_BASE}/favorite-recipes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            device_id: deviceId,
+            recipe_id: detail.id,
+            title: detail.title || "레시피",
+            condition_summary: conditionSummary,
+            household_size: householdSize,
+            budget: budgetInputEl.value.trim() || null,
+            excluded_items: excludedItems,
+            recipe_detail: detail,
+          }),
+        });
+        btn.textContent = "★ 즐겨찾기 완료";
+      } catch (err) {
+        btn.textContent = "☆ 즐겨찾기 추가 (실패, 다시 시도)";
+        btn.disabled = false;
+      }
+    });
+    return btn;
+  }
+
+  function renderFavoritesList(favorites) {
+    favoritesListEl.innerHTML = "";
+    if (!favorites.length) {
+      favoritesListEl.innerHTML = '<p class="board-intro" style="margin:0;">아직 즐겨찾기한 레시피가 없어요.</p>';
+      return;
+    }
+    for (const fav of favorites) {
+      const item = document.createElement("div");
+      item.className = "fav-list-item";
+
+      const text = document.createElement("div");
+      text.className = "fav-list-text";
+      text.innerHTML =
+        `<div class="fav-list-title">${escapeHtml(fav.title || "레시피")}</div>` +
+        `<div>${escapeHtml(fav.condition_summary || "")}</div>`;
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "fav-list-del";
+      delBtn.textContent = "삭제";
+      delBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        delBtn.disabled = true;
+        try {
+          await fetch(
+            `${API_BASE}/favorite-recipes/${encodeURIComponent(fav.id)}?device_id=${encodeURIComponent(deviceId)}`,
+            { method: "DELETE" }
+          );
+          openFavoritesModal();
+        } catch (err) {
+          delBtn.disabled = false;
+        }
+      });
+
+      item.appendChild(text);
+      item.appendChild(delBtn);
+      item.addEventListener("click", () => loadFavorite(fav));
+      favoritesListEl.appendChild(item);
+    }
+  }
+
+  // 즐겨찾기를 고르면, 그 당시 조건(인원수/예산/제외재료)을 조건 바에
+  // 그대로 복원하고 레시피 상세를 에이전트 호출 없이 바로 보여준다.
+  // 같은 레시피+조건으로 저장해둔 장바구니 결과가 있으면 이어서 보여준다.
+  async function loadFavorite(fav) {
+    closeFavoritesModal();
+
+    if (typeof fav.household_size === "number") {
+      householdSize = Math.max(1, Math.min(20, fav.household_size));
+      householdValueEl.textContent = householdSize;
+    }
+    budgetInputEl.value = fav.budget || "";
+    excludedItems = Array.isArray(fav.excluded_items) ? fav.excluded_items : [];
+    if (excludedItems.length) {
+      excludeBadge.style.display = "inline-block";
+      excludeBadge.textContent = excludedItems.length;
+    } else {
+      excludeBadge.style.display = "none";
+    }
+
+    const { outroLines } = showBoard({
+      type: "recipe",
+      detail: fav.recipe_detail,
+      outroText: `저장된 즐겨찾기를 불러왔어요 (${fav.condition_summary || "조건 정보 없음"}).`,
+    });
+    addBubble("bot", outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋");
+
+    if (fav.recipe_detail && fav.recipe_detail.id) {
+      try {
+        const cached = await fetchCachedCart(cacheKeyFor(fav.recipe_detail.id));
+        if (cached && cached.text) {
+          showBoard({ type: "text", text: cached.text });
+        }
+      } catch (err) {
+        // 캐시된 장바구니가 없거나 조회에 실패해도 레시피 상세는 이미 보여줬으니 무시한다.
+      }
+    }
+  }
+
+  async function openFavoritesModal() {
+    favoritesOverlay.classList.add("open");
+    favoritesListEl.innerHTML = '<p class="board-intro" style="margin:0;">불러오는 중...</p>';
+    try {
+      const res = await fetch(`${API_BASE}/favorite-recipes?device_id=${encodeURIComponent(deviceId)}`);
+      const data = await res.json();
+      renderFavoritesList(data.favorites || []);
+    } catch (err) {
+      favoritesListEl.innerHTML = '<p class="board-intro" style="margin:0;">불러오지 못했습니다.</p>';
+    }
+  }
+
+  function closeFavoritesModal() {
+    favoritesOverlay.classList.remove("open");
+  }
+
+  favoritesBtn.addEventListener("click", openFavoritesModal);
+  favoritesClose.addEventListener("click", closeFavoritesModal);
+  favoritesOverlay.addEventListener("click", (e) => {
+    if (e.target === favoritesOverlay) closeFavoritesModal();
+  });
+
   async function sendMessage(overrideText) {
     const typed = overrideText !== undefined ? overrideText : inputEl.value;
     const displayText = typed.trim();
@@ -894,6 +1129,7 @@
     // 조건 바(인원수/예산/제외 재료)는 직접 타이핑한 메시지에만 자동으로
     // 덧붙인다 — 카드 클릭이나 "네"/"아니요" 같은 빠른 응답에는 안 붙인다.
     const sendText = overrideText === undefined ? buildConditionPrefix() + displayText : displayText;
+    if (overrideText === undefined) lastUserQueryText = sendText;
 
     addBubble("user", displayText);
     if (overrideText === undefined) inputEl.value = "";
