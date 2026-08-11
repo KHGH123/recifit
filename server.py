@@ -5,11 +5,25 @@ CLI has no way to add. Run with `python server.py` instead of
 """
 import os
 
-import uvicorn
-from fastapi import HTTPException
-from google.adk.cli.fast_api import get_fast_api_app
+AGENTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
-from recifit_agent.favorites_store import (
+# `adk api_server` loads recifit_agent/.env before importing the agent
+# package, so GOOGLE_CLOUD_PROJECT etc. are already set by the time
+# discovery_engine_client.py reads them at import time. Importing
+# recifit_agent.favorites_store below pulls in the whole recifit_agent
+# package (its __init__.py does `from . import agent`) the same way — so
+# .env has to be loaded here first, before that import, or
+# discovery_engine_client.py picks up PROJECT_ID=None and every Discovery
+# Engine call fails with a 403.
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv(os.path.join(AGENTS_DIR, "recifit_agent", ".env"))
+
+import uvicorn  # noqa: E402
+from fastapi import HTTPException  # noqa: E402
+from google.adk.cli.fast_api import get_fast_api_app  # noqa: E402
+
+from recifit_agent.favorites_store import (  # noqa: E402
     delete_favorite_recipe,
     get_cached_result,
     list_favorite_recipes,
@@ -17,7 +31,6 @@ from recifit_agent.favorites_store import (
     save_favorite_recipe,
 )
 
-AGENTS_DIR = os.path.dirname(os.path.abspath(__file__))
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
 
