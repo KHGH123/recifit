@@ -659,14 +659,17 @@
     container.appendChild(card);
   }
 
-  // 줄 목록을 그린다 — 불릿 줄 바로 다음이 순수 URL 줄이면(상품명 + 구매
-  // 링크 패턴) 카드로 묶어서 보여주고, 그 외는 한 줄씩 그대로 그린다.
+  // 줄 목록을 그린다 — 어떤 줄이든 바로 다음이 순수 URL 줄이면(상품명 +
+  // 구매 링크 패턴) 카드로 묶어서 보여주고, 그 외는 한 줄씩 그대로 그린다.
+  // 앞줄에 불릿(-/•/*)이 붙어있는지는 안 따진다 — 모델이 상품명 줄
+  // 앞에 불릿을 붙일 때도 있고 안 붙일 때도 있어서, "바로 다음이 순수
+  // URL"이라는 것 자체를 신호로 쓴다.
   function renderLines(container, lines, { big } = {}) {
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
       const next = lines[i + 1];
-      if (BULLET_RE.test(line) && next !== undefined && isBareUrlLine(next)) {
+      if (line.trim() && !isBareUrlLine(line) && next !== undefined && isBareUrlLine(next)) {
         appendProductCard(container, line, next);
         i += 2;
         continue;
