@@ -953,6 +953,54 @@
     return { outroLines };
   }
 
+  // build_shopping_list가 돌려준 원본 구조화 데이터(selections/total_price/
+  // budget/within_budget)를 직접 그린다 — get_recipe와 같은 이유로,
+  // Gemini가 재료 목록을 텍스트로 옮겨 적다가 일부를 빠뜨리거나(실제로
+  // 재현된 문제) 가격을 잘못 옮기는 일이 애초에 생길 수 없다.
+  function renderShoppingListInto(wrap, data, outroText) {
+    const titleEl = document.createElement("div");
+    titleEl.innerHTML = "<strong>장보기 목록</strong>";
+    titleEl.style.fontSize = "17px";
+    wrap.appendChild(titleEl);
+
+    const spacer = document.createElement("div");
+    spacer.style.height = "6px";
+    wrap.appendChild(spacer);
+
+    for (const sel of data.selections || []) {
+      const amountText =
+        sel.scaled_amount != null ? `${sel.scaled_amount}${sel.unit || ""} 필요` : "필요량 미상";
+      if (sel.selected) {
+        const qtyText = sel.quantity > 1 ? ` ${sel.quantity}개` : "";
+        const line = `**${sel.ingredient}**: ${amountText} — ${sel.selected.name}${qtyText} (${sel.subtotal.toLocaleString()}원)`;
+        appendProductCard(wrap, line, sel.selected.url);
+      } else {
+        const p = document.createElement("div");
+        p.className = "board-bullet-line";
+        p.innerHTML = inlineFormat(
+          `**${sel.ingredient}**: ${amountText} — 상품을 찾지 못했어요${sel.skipped_reason ? ` (${sel.skipped_reason})` : ""}`
+        );
+        wrap.appendChild(p);
+      }
+    }
+
+    const summary = document.createElement("div");
+    summary.style.marginTop = "14px";
+    summary.style.lineHeight = "1.7";
+    let summaryHtml = `<strong>총 예상 비용: ${(data.total_price || 0).toLocaleString()}원</strong>`;
+    if (data.budget != null) {
+      summaryHtml += data.within_budget
+        ? `<br>예산 ${data.budget.toLocaleString()}원 이내입니다 ✅`
+        : `<br>예산 ${data.budget.toLocaleString()}원을 ${(data.total_price - data.budget).toLocaleString()}원 초과했습니다 ⚠️`;
+    }
+    summary.innerHTML = summaryHtml;
+    wrap.appendChild(summary);
+
+    const outroLines = outroText ? [outroText] : [];
+    appendOutro(wrap, outroLines);
+    return { outroLines };
+  }
+
   // 브라우저 히스토리처럼 "지금까지 본 보드 내용"을 전부 타임라인에 쌓아두고
   // 인덱스만 옮겨 다닌다 — 레시피 상세를 보다가 장바구니 결과로 넘어간 뒤
   // 다시 레시피로 돌아갔다가 장바구니를 또 보고 싶을 때, 이미 한 번 받은
@@ -1001,6 +1049,8 @@
     const result =
       entry.type === "recipe"
         ? renderRecipeDetailInto(wrap, entry.detail, entry.outroText)
+        : entry.type === "cart"
+        ? renderShoppingListInto(wrap, entry.data, entry.outroText)
         : renderTextBoardInto(wrap, entry.text, entry.candidatePool);
 
     boardEl.appendChild(wrap);
@@ -1181,13 +1231,15 @@
     return res.json();
   }
 
-  function saveCachedCart(cacheKey, text) {
+  function saveCachedCart(cacheKey, cartData, outroText) {
     // 저장 실패해도 대화 흐름에는 영향 없게 조용히 무시한다 — 캐시는
-    // 있으면 좋은 최적화일 뿐, 없다고 기능이 깨지면 안 된다.
+    // 있으면 좋은 최적화일 뿐, 없다고 기능이 깨지면 안 된다. build_shopping_list의
+    // 구조화된 결과를 그대로 저장한다 — 텍스트를 저장하면 그 텍스트를
+    // 만들 때 이미 빠졌을 수 있는 재료가 캐시에도 그대로 남기 때문이다.
     fetch(`${API_BASE}/favorites/${encodeURIComponent(cacheKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ cart: cartData, outroText: outroText || "" }),
     }).catch(() => {});
   }
 
@@ -1321,8 +1373,8 @@
     if (fav.recipe_detail && fav.recipe_detail.id) {
       try {
         const cached = await fetchCachedCart(cacheKeyFor(fav.recipe_detail.id));
-        if (cached && cached.text) {
-          showBoard({ type: "text", text: cached.text });
+        if (cached && cached.cart) {
+          showBoard({ type: "cart", data: cached.cart, outroText: cached.outroText || "" });
         }
       } catch (err) {
         // 캐시된 장바구니가 없거나 조회에 실패해도 레시피 상세는 이미 보여줬으니 무시한다.
@@ -1410,8 +1462,11 @@
       statusEl.textContent = "저장된 결과 확인 중...";
       try {
         const cached = await fetchCachedCart(cacheKey);
-        if (cached && cached.text) {
-          const { outroLines } = showBoard({ type: "text", text: cached.text }, sendBoardIndex);
+        if (cached && cached.cart) {
+          const { outroLines } = showBoard(
+            { type: "cart", data: cached.cart, outroText: cached.outroText || "" },
+            sendBoardIndex
+          );
           const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
           addBubble("bot", `이전에 계산해둔 결과를 바로 불러왔어요 ⚡ ${chatMsg}`);
           isBusy = false;
@@ -1470,6 +1525,8 @@
       const recipeSearchResponses = findAllFunctionResponses(events, "recipe_search_agent");
       const candidatePool = recipeSearchResponses.flatMap((r) => r.candidates || []);
 
+      const shoppingList = findFunctionResponse(events, "build_shopping_list");
+
       if (recipeDetail && !recipeDetail.error) {
         // 레시피 상세는 Gemini가 옮겨 적은 텍스트가 아니라 get_recipe의
         // 원본 응답으로 직접 그린다 — 모델 답변(reply)은 그 밑에 붙는
@@ -1477,9 +1534,16 @@
         const { outroLines } = showBoard({ type: "recipe", detail: recipeDetail, outroText: reply }, sendBoardIndex);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 조리순서를 확인해보세요 📋";
         addBubble("bot", chatMsg);
+      } else if (shoppingList) {
+        // 장바구니 결과도 마찬가지로 build_shopping_list의 원본 응답을
+        // 직접 그린다 — 재료가 많을 때 모델이 텍스트로 옮겨 적으면서
+        // 일부를 빠뜨리는 문제가 실제로 있었다.
+        const { outroLines } = showBoard({ type: "cart", data: shoppingList, outroText: reply }, sendBoardIndex);
+        if (pendingCacheKey) saveCachedCart(pendingCacheKey, shoppingList, reply);
+        const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
+        addBubble("bot", chatMsg);
       } else if (isBigContent(reply)) {
         const { outroLines } = showBoard({ type: "text", text: reply, candidatePool }, sendBoardIndex);
-        if (pendingCacheKey) saveCachedCart(pendingCacheKey, reply);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
         addBubble("bot", chatMsg);
       } else {
