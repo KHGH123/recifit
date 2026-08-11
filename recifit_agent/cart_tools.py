@@ -20,8 +20,11 @@ _UNIT_TO_BASE: dict[str, tuple[str, float]] = {
 }
 
 
-def _normalize(text: str) -> str:
-    return (text or "").strip().lower()
+def _normalize(text: str | None) -> str:
+    # 모델이 pkg_unit/이름 같은 "문자열" 필드에 숫자를 넣어 돌려주는 경우가
+    # 실제로 있었다 — 스키마에 str로 정해놔도 어길 수 있으니, 여기서
+    # str()로 방어적으로 변환한다 (안 그러면 .strip()에서 그대로 죽는다).
+    return str(text or "").strip().lower()
 
 
 def _contains_any(name: str, terms: list[str]) -> bool:

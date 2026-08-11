@@ -64,6 +64,17 @@ def test_pick_cheapest_product_excludes_allergy_terms():
     assert result["skipped_reason"] is not None
 
 
+def test_pick_cheapest_product_tolerates_non_string_pkg_unit():
+    # 실사용 중 Gemini가 pkg_unit에 문자열 대신 숫자를 채워 돌려준 적이
+    # 있었다(예: 300) — 크래시 없이 "필요량 비교 불가 -> 1개로 취급"으로
+    # 안전하게 처리되어야 한다.
+    candidates = [_product("p1", price=3000, pkg_amount=300, pkg_unit=300, name="이상한 단위 상품")]
+    result = pick_cheapest_product(needed_amount=600, needed_unit="g", candidates=candidates, exclude_terms=[])
+    assert result["selected"]["product_id"] == "p1"
+    assert result["quantity"] == 1
+    assert result["subtotal"] == 3000
+
+
 def test_summarize_cart_sums_and_checks_budget():
     selections = [{"subtotal": 5000}, {"subtotal": 3000}]
     result = summarize_cart(selections, budget=10000)
