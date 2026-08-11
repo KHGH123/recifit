@@ -141,6 +141,7 @@
     cursor: pointer;
   }
   .board-actions button:hover { background: var(--accent); color: #08111f; }
+  .board-actions button:disabled { opacity: 0.35; cursor: default; pointer-events: none; }
   .board-image {
     display: block;
     cursor: pointer;
@@ -645,10 +646,23 @@
       actions.className = "board-actions";
       const yesBtn = document.createElement("button");
       yesBtn.textContent = "네";
-      yesBtn.addEventListener("click", () => sendMessage("네"));
       const noBtn = document.createElement("button");
       noBtn.textContent = "아니요";
-      noBtn.addEventListener("click", () => sendMessage("아니요"));
+      // 클릭하면 즉시 둘 다 비활성화한다 — 에이전트 응답이 오기 전까지는
+      // 보드가 다시 그려지지 않아서, 안 그러면 눌러도 버튼이 그대로
+      // 남아있어 클릭이 씹힌 것처럼 보인다.
+      const disableBoth = () => {
+        yesBtn.disabled = true;
+        noBtn.disabled = true;
+      };
+      yesBtn.addEventListener("click", () => {
+        disableBoth();
+        sendMessage("네");
+      });
+      noBtn.addEventListener("click", () => {
+        disableBoth();
+        sendMessage("아니요");
+      });
       actions.appendChild(yesBtn);
       actions.appendChild(noBtn);
       wrap.appendChild(actions);
@@ -834,8 +848,16 @@
   // 옮겨 다닐 때는 이미 있는 타임라인을 그대로 재사용하고 이 함수를
   // 부르지 않는다. 뒤로 갔다가 새 메시지를 보내면 그 뒤(다시 갈 수 있던
   // "다음" 구간)는 더 이상 유효하지 않으므로 잘라내고 새 항목을 붙인다.
-  function showBoard(entry) {
-    boardTimeline = boardTimeline.slice(0, boardIndex + 1);
+  //
+  // afterIndex를 명시적으로 넘기지 않으면 "지금" boardIndex를 기준으로
+  // 자른다 — 그런데 에이전트 응답은 몇 분씩 걸릴 수 있어서, 요청을 보낸
+  // 뒤 응답이 오기 전에 사용자가 뒤로/앞으로 눌러 boardIndex가 바뀌면
+  // 엉뚱한 위치를 기준으로 잘려서 그 사이 봤던 화면이 사라질 수 있다.
+  // sendMessage처럼 응답을 기다리는 호출부는 요청을 보내기 "전" 시점의
+  // boardIndex를 afterIndex로 직접 넘겨서 이 문제를 피한다.
+  function showBoard(entry, afterIndex) {
+    const cutAt = afterIndex === undefined ? boardIndex : afterIndex;
+    boardTimeline = boardTimeline.slice(0, cutAt + 1);
     boardTimeline.push(entry);
     boardIndex = boardTimeline.length - 1;
     return renderCurrentBoard();
@@ -910,7 +932,7 @@
   // 이벤트가 생성되는 즉시(SSE) 하나씩 받는다 — onEvent 콜백으로 상태
   // 문구를 실시간으로 갱신할 수 있다. 최종적으로는 /run과 동일하게 전체
   // 이벤트 배열을 돌려준다.
-  async function runAgentStreaming(sendText, onEvent) {
+  async function runAgentStreaming(sendText, onEvent, signal) {
     const res = await fetch(`${API_BASE}/run_sse`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -921,6 +943,7 @@
         new_message: { role: "user", parts: [{ text: sendText }] },
         streaming: false,
       }),
+      signal,
     });
 
     if (!res.ok) {
@@ -1121,10 +1144,26 @@
     if (e.target === favoritesOverlay) closeFavoritesModal();
   });
 
+  // 에이전트가 처리 중일 때 엔터/카드 클릭/네·아니요 버튼으로 또 메시지를
+  // 보내면 두 요청이 동시에 겹쳐 실행되면서 상태 표시나 보드 갱신이
+  // 뒤섞일 수 있다 — sendBtn.disabled만으로는 이 경로들을 못 막아서
+  // 별도 플래그로 sendMessage 진입 자체를 막는다.
+  let isBusy = false;
+  let activeAbortController = null;
+
   async function sendMessage(overrideText) {
+    if (isBusy) return;
+
     const typed = overrideText !== undefined ? overrideText : inputEl.value;
     const displayText = typed.trim();
     if (!displayText) return;
+
+    isBusy = true;
+
+    // 이 요청을 보내는 시점의 위치를 기억해둔다 — 응답이 오는 동안
+    // 사용자가 이전으로/다음으로 눌러 boardIndex가 바뀌어도, 이 응답은
+    // 항상 "보낸 시점"을 기준으로 이어붙인다(응답 도착 시점 기준이 아님).
+    const sendBoardIndex = boardIndex;
 
     // 조건 바(인원수/예산/제외 재료)는 직접 타이핑한 메시지에만 자동으로
     // 덧붙인다 — 카드 클릭이나 "네"/"아니요" 같은 빠른 응답에는 안 붙인다.
@@ -1133,13 +1172,13 @@
 
     addBubble("user", displayText);
     if (overrideText === undefined) inputEl.value = "";
-    sendBtn.disabled = true;
+    sendBtn.textContent = "중지";
 
     // 방금 레시피 상세를 본 상태에서 "네/예/응"으로 답하면 장보기 상품
     // 검색으로 넘어가는 확인 응답이다 — 재료마다 실시간으로 Kurly를
     // 검색하는 단계라 몇 분씩 걸릴 수 있으니, 같은 레시피+조건으로 이미
     // 계산해둔 결과가 있으면 에이전트를 다시 부르지 않고 바로 보여준다.
-    const currentEntry = boardIndex >= 0 ? boardTimeline[boardIndex] : null;
+    const currentEntry = sendBoardIndex >= 0 ? boardTimeline[sendBoardIndex] : null;
     const isConfirmReply =
       ["네", "예", "응"].includes(displayText) &&
       currentEntry &&
@@ -1154,9 +1193,11 @@
       try {
         const cached = await fetchCachedCart(cacheKey);
         if (cached && cached.text) {
-          const { outroLines } = showBoard({ type: "text", text: cached.text });
+          const { outroLines } = showBoard({ type: "text", text: cached.text }, sendBoardIndex);
           const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
           addBubble("bot", `이전에 계산해둔 결과를 바로 불러왔어요 ⚡ ${chatMsg}`);
+          isBusy = false;
+          sendBtn.textContent = "전송";
           sendBtn.disabled = false;
           statusEl.textContent = "";
           inputEl.focus();
@@ -1170,24 +1211,29 @@
 
     statusEl.textContent = "생각 중...";
     let productSearchCount = 0;
+    activeAbortController = new AbortController();
 
     try {
-      const events = await runAgentStreaming(sendText, (event) => {
-        if (event.content && event.content.parts) {
-          for (const part of event.content.parts) {
-            if (part.functionCall && part.functionCall.name === "product_search_agent") {
-              productSearchCount += 1;
+      const events = await runAgentStreaming(
+        sendText,
+        (event) => {
+          if (event.content && event.content.parts) {
+            for (const part of event.content.parts) {
+              if (part.functionCall && part.functionCall.name === "product_search_agent") {
+                productSearchCount += 1;
+              }
             }
           }
-        }
-        const label = statusLabelForEvent(event);
-        if (label) {
-          statusEl.textContent =
-            label === TOOL_STATUS_LABELS.product_search_agent
-              ? `${label} (재료 ${productSearchCount}개째)`
-              : label;
-        }
-      });
+          const label = statusLabelForEvent(event);
+          if (label) {
+            statusEl.textContent =
+              label === TOOL_STATUS_LABELS.product_search_agent
+                ? `${label} (재료 ${productSearchCount}개째)`
+                : label;
+          }
+        },
+        activeAbortController.signal
+      );
 
       const reply = extractReplyText(events) || "(응답 없음)";
       const recipeDetail = findFunctionResponse(events, "get_recipe");
@@ -1196,11 +1242,11 @@
         // 레시피 상세는 Gemini가 옮겨 적은 텍스트가 아니라 get_recipe의
         // 원본 응답으로 직접 그린다 — 모델 답변(reply)은 그 밑에 붙는
         // 짧은 대화(예: "장보기 상품도 찾아드릴까요?")로만 쓴다.
-        const { outroLines } = showBoard({ type: "recipe", detail: recipeDetail, outroText: reply });
+        const { outroLines } = showBoard({ type: "recipe", detail: recipeDetail, outroText: reply }, sendBoardIndex);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 조리순서를 확인해보세요 📋";
         addBubble("bot", chatMsg);
       } else if (isBigContent(reply)) {
-        const { outroLines } = showBoard({ type: "text", text: reply });
+        const { outroLines } = showBoard({ type: "text", text: reply }, sendBoardIndex);
         if (pendingCacheKey) saveCachedCart(pendingCacheKey, reply);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
         addBubble("bot", chatMsg);
@@ -1208,19 +1254,33 @@
         addBubble("bot", reply);
       }
     } catch (err) {
-      if (err.status) {
+      if (err.name === "AbortError") {
+        addBubble("bot", "요청을 중지했습니다.");
+      } else if (err.status) {
         addBubble("bot", `오류가 발생했습니다 (${err.status}): ${err.message}`);
       } else {
         addBubble("bot", `서버에 연결할 수 없습니다: ${err.message}`);
       }
     } finally {
+      isBusy = false;
+      activeAbortController = null;
+      sendBtn.textContent = "전송";
       sendBtn.disabled = false;
       statusEl.textContent = "";
       inputEl.focus();
     }
   }
 
-  sendBtn.addEventListener("click", () => sendMessage());
+  // 처리 중일 때는 같은 버튼이 "중지"로 바뀌어 누르면 진행 중인 요청을
+  // 취소한다 — 그 전까지는 sendBtn.disabled로 막던 것을, 눌러서 멈출 수
+  // 있게 바꾼 것.
+  sendBtn.addEventListener("click", () => {
+    if (isBusy) {
+      if (activeAbortController) activeAbortController.abort();
+    } else {
+      sendMessage();
+    }
+  });
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendMessage();
   });
