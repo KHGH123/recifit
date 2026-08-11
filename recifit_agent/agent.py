@@ -5,6 +5,7 @@ from google.adk.tools.agent_tool import AgentTool
 from google.genai import types
 from pydantic import BaseModel
 
+from recifit_agent.conditions import record_conditions
 from recifit_agent.parsing_tools import parse_recipe_ingredients, parse_recipe_servings
 from recifit_agent.recipe_detail_client import get_recipe
 from recifit_agent.search_tools import search_recipes
@@ -114,6 +115,15 @@ root_agent = Agent(
            으로, 알레르기/제외 재료·보유 재료가 없으면 빈 목록으로 간주하고
            다음 단계로 넘어간다. 어떤 조건을 기본값으로 채웠는지는
            기억해뒀다가 나중에 알려준다.
+
+           조건을 다 정리했으면, 다음 단계로 넘어가기 전에
+           record_conditions를 한 번 호출해서 방금 정리한 household_size,
+           budget, excluded_items, fridge_items, meal_count를 그대로
+           넘긴다 — 화면이 인원수 표시 등을 실제 반영된 값으로 맞추고
+           즐겨찾기 요약에 쓰는 용도다. condition_summary는 사용자 문장을
+           그대로 복사하지 말고 "1인 가구 · 예산 2만원 · 새우 제외"처럼
+           핵심만 짧게 새로 요약해서 넣는다. 이 호출 결과는 사용자에게
+           보여주지 않는다(내부 기록용).
 
            "한식", "양식", "중식"처럼 구체적인 메뉴가 아니라 큰 범주로
            요청하면, 사용자에게 더 구체적으로 말해달라고 되묻지 말고 네가
@@ -247,6 +257,7 @@ root_agent = Agent(
     """,
     tools=[
         AgentTool(agent=recipe_search_agent),
+        record_conditions,
         parse_recipe_ingredients,
         parse_recipe_servings,
         build_shopping_list,

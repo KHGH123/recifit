@@ -438,10 +438,16 @@
   }
   const deviceId = getDeviceId();
 
-  // 즐겨찾기할 때 "그 당시 조건"으로 같이 저장할, 방금 사용자가 직접
-  // 타이핑해서 보낸 원문(조건 바 값이 앞에 붙은 전체 문장) — 조건 바에
-  // 없는 자유 텍스트 조건("이틀치 넉넉하게" 등)까지 그대로 남기기 위함.
+  // 즐겨찾기할 때 참고용으로 같이 저장해두는, 방금 사용자가 직접
+  // 타이핑해서 보낸 원문(조건 바 값이 앞에 붙은 전체 문장). 화면에
+  // 그대로 보여주는 용도가 아니라 저장용 — 실제 표시에는
+  // record_conditions로 받은 condition_summary(아래)를 쓴다.
   let lastUserQueryText = "";
+
+  // 에이전트가 record_conditions로 보고한, "실제로 반영된" 최신 조건 —
+  // 채팅 문장으로만 말한 값(예: "4인분")까지 반영된 진짜 값이라, 조건 바
+  // 동기화와 즐겨찾기 요약 표시에 이걸 우선 쓴다.
+  let lastConditions = null;
 
   const chatEl = document.getElementById("chat");
   const boardEl = document.getElementById("board");
@@ -555,6 +561,37 @@
     refreshFridgeBadge();
     closeFridgeModal();
   });
+
+  // 에이전트가 record_conditions로 보고한 값으로 조건 바를 동기화한다 —
+  // 채팅 문장으로만 말한 조건(예: "4인분")도 화면 위 표시에 반영되게
+  // 하기 위함이다. 조건 바를 직접 조작한 게 아니라 에이전트가 실제로
+  // 반영한 값이 이거니, 이게 진짜 값이라고 보고 그대로 덮어쓴다.
+  function syncConditionBarFrom(conditions) {
+    if (typeof conditions.household_size === "number") {
+      householdSize = Math.max(1, Math.min(20, Math.round(conditions.household_size)));
+      householdValueEl.textContent = householdSize;
+    }
+    if (conditions.budget !== undefined && conditions.budget !== null) {
+      budgetInputEl.value = conditions.budget;
+    }
+    if (Array.isArray(conditions.excluded_items)) {
+      excludedItems = conditions.excluded_items;
+      if (excludedItems.length) {
+        excludeBadge.style.display = "inline-block";
+        excludeBadge.textContent = excludedItems.length;
+      } else {
+        excludeBadge.style.display = "none";
+      }
+    }
+    if (Array.isArray(conditions.fridge_items) && conditions.fridge_items.length) {
+      // 냉장고 재료는 localStorage가 원본이니, 채팅에서 그때만 언급된
+      // 것까지 영구 저장하진 않는다 — 배지 표시만 에이전트가 실제로 뭘
+      // 반영했는지 보여주기 위해 합쳐서 잠깐 보여준다.
+      const merged = Array.from(new Set([...fridgeItems, ...conditions.fridge_items]));
+      fridgeBadge.style.display = "inline-block";
+      fridgeBadge.textContent = merged.length;
+    }
+  }
 
   // 조건 바 상태를 자연어 한 줄로 요약 — 타이핑해서 보낸 메시지 앞에만 붙인다
   // (카드 클릭/예-아니요 같은 빠른 응답에는 안 붙인다)
@@ -1099,9 +1136,18 @@
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       btn.textContent = "저장 중...";
+      // record_conditions로 받은, 에이전트가 직접 간결하게 요약한 문구를
+      // 우선 쓴다 — 채팅 원문을 그대로 목록에 보여주지 않기 위함이다.
+      // 혹시 못 받았으면(비정상 상황) 조건 바 값으로 대충 대체한다.
       const conditionSummary =
-        lastUserQueryText ||
+        (lastConditions && lastConditions.condition_summary) ||
         `인원수 ${householdSize}명, 예산 ${budgetInputEl.value.trim() || "제한 없음"}${excludedItems.length ? ", " + excludedItems.join(", ") + " 제외" : ""}`;
+      const householdForSave = (lastConditions && lastConditions.household_size) ?? householdSize;
+      const budgetForSave = lastConditions && lastConditions.budget !== undefined
+        ? lastConditions.budget
+        : budgetInputEl.value.trim() || null;
+      const excludedForSave = (lastConditions && lastConditions.excluded_items) || excludedItems;
+      const fridgeForSave = (lastConditions && lastConditions.fridge_items) || fridgeItems;
       try {
         await fetch(`${API_BASE}/favorite-recipes`, {
           method: "POST",
@@ -1111,9 +1157,11 @@
             recipe_id: detail.id,
             title: detail.title || "레시피",
             condition_summary: conditionSummary,
-            household_size: householdSize,
-            budget: budgetInputEl.value.trim() || null,
-            excluded_items: excludedItems,
+            household_size: householdForSave,
+            budget: budgetForSave,
+            excluded_items: excludedForSave,
+            fridge_items: fridgeForSave,
+            raw_query: lastUserQueryText || null,
             recipe_detail: detail,
           }),
         });
@@ -1185,6 +1233,18 @@
     } else {
       excludeBadge.style.display = "none";
     }
+    if (Array.isArray(fav.fridge_items) && fav.fridge_items.length) {
+      fridgeBadge.style.display = "inline-block";
+      fridgeBadge.textContent = fav.fridge_items.length;
+    }
+    lastConditions = {
+      household_size: householdSize,
+      budget: fav.budget ?? null,
+      excluded_items: excludedItems,
+      fridge_items: fav.fridge_items || [],
+      meal_count: fav.meal_count ?? 1,
+      condition_summary: fav.condition_summary || "",
+    };
 
     const { outroLines } = showBoard({
       type: "recipe",
@@ -1320,6 +1380,12 @@
 
       const reply = extractReplyText(events) || "(응답 없음)";
       const recipeDetail = findFunctionResponse(events, "get_recipe");
+
+      const conditions = findFunctionResponse(events, "record_conditions");
+      if (conditions) {
+        lastConditions = conditions;
+        syncConditionBarFrom(conditions);
+      }
 
       if (recipeDetail && !recipeDetail.error) {
         // 레시피 상세는 Gemini가 옮겨 적은 텍스트가 아니라 get_recipe의
