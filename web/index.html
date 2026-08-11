@@ -859,6 +859,33 @@
     return events;
   }
 
+  // 레시피(recipe_id) + 지금 조건 바 상태(인원수/예산/제외재료)를 묶은 키.
+  // 같은 레시피를 같은 조건으로 다시 고르면 이 키로 저장된 장바구니
+  // 결과를 재사용한다. (meal_count처럼 조건 바에 없는 값은 반영 못 함 —
+  // 채팅으로만 말한 조건까지는 키에 넣을 수 없다는 한계가 있다.)
+  function cacheKeyFor(recipeId) {
+    const budget = budgetInputEl.value.trim() || "none";
+    const excluded = [...excludedItems].sort().join(",");
+    return `${recipeId}|h${householdSize}|b${budget}|e${excluded}`;
+  }
+
+  async function fetchCachedCart(cacheKey) {
+    const res = await fetch(`${API_BASE}/favorites/${encodeURIComponent(cacheKey)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`favorites lookup failed: ${res.status}`);
+    return res.json();
+  }
+
+  function saveCachedCart(cacheKey, text) {
+    // 저장 실패해도 대화 흐름에는 영향 없게 조용히 무시한다 — 캐시는
+    // 있으면 좋은 최적화일 뿐, 없다고 기능이 깨지면 안 된다.
+    fetch(`${API_BASE}/favorites/${encodeURIComponent(cacheKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).catch(() => {});
+  }
+
   async function sendMessage(overrideText) {
     const typed = overrideText !== undefined ? overrideText : inputEl.value;
     const displayText = typed.trim();
@@ -871,8 +898,41 @@
     addBubble("user", displayText);
     if (overrideText === undefined) inputEl.value = "";
     sendBtn.disabled = true;
-    statusEl.textContent = "생각 중...";
 
+    // 방금 레시피 상세를 본 상태에서 "네/예/응"으로 답하면 장보기 상품
+    // 검색으로 넘어가는 확인 응답이다 — 재료마다 실시간으로 Kurly를
+    // 검색하는 단계라 몇 분씩 걸릴 수 있으니, 같은 레시피+조건으로 이미
+    // 계산해둔 결과가 있으면 에이전트를 다시 부르지 않고 바로 보여준다.
+    const currentEntry = boardIndex >= 0 ? boardTimeline[boardIndex] : null;
+    const isConfirmReply =
+      ["네", "예", "응"].includes(displayText) &&
+      currentEntry &&
+      currentEntry.type === "recipe" &&
+      currentEntry.detail &&
+      currentEntry.detail.id;
+    let pendingCacheKey = null;
+
+    if (isConfirmReply) {
+      const cacheKey = cacheKeyFor(currentEntry.detail.id);
+      statusEl.textContent = "저장된 결과 확인 중...";
+      try {
+        const cached = await fetchCachedCart(cacheKey);
+        if (cached && cached.text) {
+          const { outroLines } = showBoard({ type: "text", text: cached.text });
+          const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
+          addBubble("bot", `이전에 계산해둔 결과를 바로 불러왔어요 ⚡ ${chatMsg}`);
+          sendBtn.disabled = false;
+          statusEl.textContent = "";
+          inputEl.focus();
+          return;
+        }
+      } catch (err) {
+        // 캐시 조회가 실패해도 평소대로 에이전트를 호출하는 흐름으로 계속 진행한다.
+      }
+      pendingCacheKey = cacheKey;
+    }
+
+    statusEl.textContent = "생각 중...";
     let productSearchCount = 0;
 
     try {
@@ -905,6 +965,7 @@
         addBubble("bot", chatMsg);
       } else if (isBigContent(reply)) {
         const { outroLines } = showBoard({ type: "text", text: reply });
+        if (pendingCacheKey) saveCachedCart(pendingCacheKey, reply);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
         addBubble("bot", chatMsg);
       } else {
