@@ -7,6 +7,7 @@ from google.genai import types
 
 from recifit_agent.cart_tools import pick_cheapest_product, scale_ingredient_amount, summarize_cart
 from recifit_agent.parsing_tools import parse_recipe_ingredients, parse_recipe_servings
+from recifit_agent.recipe_detail_client import get_recipe
 
 model_name = os.getenv("MODEL", "gemini-2.5-flash")
 project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
@@ -36,9 +37,13 @@ recipe_search_agent = Agent(
     description="사용자가 원하는 요리(음식명)에 맞는 레시피를 데이터스토어에서 검색한다.",
     instruction="""
         - recipe_search_tool로 요청받은 음식명을 검색해서 레시피를 찾는다.
-        - 검색 결과에서 레시피 이름, 재료(ingredients) 원문, 인분(servings) 원문을
-          그대로 전달한다. 재료량이나 인분 수를 스스로 계산하거나 바꾸지 않는다.
-        - 여러 결과가 있으면 가장 잘 맞는 1개를 고르고, 왜 골랐는지는 설명하지 않아도 된다.
+        - 검색 결과에서 상위 후보 최대 5개까지, 각각의 recipe_id(문서 ID),
+          레시피 이름, 재료(ingredients) 원문, 인분(servings) 원문을 그대로
+          전달한다. recipe_id는 절대 빠뜨리지 않는다 — 나중에 원본 레시피
+          링크를 만드는 데 필요하다. 재료량이나 인분 수를 스스로 계산하거나
+          바꾸지 않는다.
+        - 결과를 하나로 좁히지 말고 후보를 그대로 나열해서 반환한다 (최종
+          선택은 사용자가 한다).
     """,
     tools=[recipe_search_tool],
 )
@@ -80,32 +85,57 @@ root_agent = Agent(
            넘어간다. 어떤 조건을 기본값으로 채웠는지는 기억해뒀다가 7번에서
            알려준다.
 
-        2. recipe_search_agent를 호출해 조건에 맞는 레시피를 찾는다.
+        이 흐름은 두 단계로 나뉜다: [A] 후보 목록 제시, [B] 사용자가 하나를
+        고르면 상세 내역 제시. 한 번에 레시피 하나로 바로 들어가지 말고
+        반드시 후보 목록을 먼저 보여주고 사용자의 선택을 기다린다.
 
-        3. parse_recipe_ingredients로 레시피의 재료 원문을 구조화하고,
-           parse_recipe_servings로 레시피 기준 인분 수를 구한다.
+        [A] 처음 요청을 받았을 때:
 
-        4. 재료 목록에서 알레르기·제외 재료와 겹치는 항목은 제외 목록으로 분류하고,
-           나머지를 "조건을 충족한 재료" 목록으로 삼는다.
+        1. 사용자 요청에서 다음 조건을 추출한다: 원하는 음식/재료, 예산(원),
+           가구 인원수(household_size), 알레르기/제외 재료 목록.
+           빠진 조건이 있어도 되묻지 말고 바로 진행한다 — 예산이 없으면
+           "예산 제한 없음"으로, 가구 인원수가 없으면 1인분(household_size=1)
+           으로, 알레르기/제외 재료가 없으면 빈 목록으로 간주하고 다음 단계로
+           넘어간다. 어떤 조건을 기본값으로 채웠는지는 기억해뒀다가 나중에
+           알려준다.
 
-        5. 조건을 충족한 재료마다 (제외 목록은 건너뛰고) 다음을 반복한다:
-           a. scale_ingredient_amount로 가구 인원수에 맞게 필요량을 환산한다
-              (직접 곱셈하지 말고 반드시 이 도구를 호출한다).
-           b. product_search_agent를 호출해 그 재료의 상품 후보를 받는다.
-              가구 인원수가 많으면(예: 4인 이상) 대용량 상품도 함께 찾도록
-              요청 문구에 인원수를 포함시킨다.
-           c. pick_cheapest_product로 알레르기/제외 재료를 제외한 후보 중
-              필요량을 채우는 가장 저렴한 상품을 고른다 (직접 비교하지 말고
-              반드시 이 도구를 호출한다).
+        2. recipe_search_agent를 호출해 조건에 맞는 레시피 후보를 여러 개
+           (최대 3~5개) 받는다. 각 후보의 recipe_id를 반드시 기억해둔다.
 
-        6. 모든 선택 결과를 summarize_cart에 넘겨 총액과 예산 이내 여부를 구한다
-           (직접 합산하지 말고 반드시 이 도구를 호출한다).
+        3. 후보 레시피마다 다음을 반복해서 "예상 총액"을 미리 계산해둔다:
+           a. parse_recipe_ingredients로 재료 원문을 구조화하고,
+              parse_recipe_servings로 레시피 기준 인분 수를 구한다.
+           b. 재료 목록에서 알레르기·제외 재료와 겹치는 항목은 제외 목록으로
+              분류하고, 나머지를 "조건을 충족한 재료" 목록으로 삼는다.
+           c. 조건을 충족한 재료마다:
+              - scale_ingredient_amount로 가구 인원수에 맞게 필요량을 환산한다
+                (직접 곱셈하지 말고 반드시 이 도구를 호출한다).
+              - product_search_agent를 호출해 상품 후보를 받는다. 가구
+                인원수가 많으면(예: 4인 이상) 대용량 상품도 함께 찾도록
+                요청 문구에 인원수를 포함시킨다.
+              - pick_cheapest_product로 필요량을 채우는 가장 저렴한 상품을
+                고른다 (직접 비교하지 말고 반드시 이 도구를 호출한다).
+           d. summarize_cart로 그 후보의 총액과 예산 이내 여부를 구한다.
+           이렇게 구한 재료·상품·수량·총액은 이후 사용자가 선택했을 때
+           다시 계산하지 않고 그대로 재사용할 것이므로 잘 기억해둔다.
 
-        7. 최종적으로 레시피명, 인분 환산 결과, 재료별 선택 상품과 수량,
-           총 예상 비용, 예산 이내 여부를 사용자에게 자연스러운 한국어로
-           정리해서 보여준다. 상품을 찾지 못한 재료는 따로 안내한다.
+        4. 사용자에게 후보 레시피 목록을 보여준다 — 레시피명과 예상 총액
+           (예산 이내인지도 함께) 정도만 간단히 나열한다. 재료별 상세 내역은
+           아직 보여주지 않는다. 어떤 걸 선택할지 물어보고 이번 턴을 마친다.
 
-           마지막으로, 1번에서 사용자가 직접 말하지 않아 기본값으로 채운
+        [B] 사용자가 후보 중 하나를 선택했을 때:
+
+        5. 다시 검색하거나 다시 계산하지 말고, 3번에서 이미 구해둔 그 후보의
+           결과를 그대로 사용한다. 레시피명, 인분 환산 결과, 재료별 선택
+           상품과 수량, 총 예상 비용, 예산 이내 여부를 사용자에게 자연스러운
+           한국어로 정리해서 보여준다. 상품을 찾지 못한 재료는 따로 안내한다.
+
+        6. get_recipe를 recipe_id로 호출해서 조리순서·이미지를 가져오고,
+           재료별 상품 내역 뒤에 이어서 보여준다. get_recipe가 에러를
+           반환하면(error 필드가 있으면) 조리순서 대신 원본 링크
+           (https://www.10000recipe.com/recipe/{recipe_id})만 안내한다.
+
+        7. 마지막으로, 1번에서 사용자가 직접 말하지 않아 기본값으로 채운
            조건이 있다면, 그 조건들을 추가로 알려주면 더 정확한 추천을
            받을 수 있다는 걸 자연스럽게 안내한다. 고정된 문구를 반복하지
            말고 실제로 빠졌던 항목을 언급하되, "이것만 넣을 수 있다"는
@@ -125,6 +155,7 @@ root_agent = Agent(
         scale_ingredient_amount,
         pick_cheapest_product,
         summarize_cart,
+        get_recipe,
     ],
     generate_content_config=types.GenerateContentConfig(temperature=0.2),
 )
