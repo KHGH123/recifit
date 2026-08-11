@@ -225,7 +225,7 @@
     cursor: pointer;
   }
   #excludeBtn:hover { border-color: var(--accent); color: var(--accent); }
-  #excludeBtn .badge {
+  #excludeBtn .badge, #fridgeBtn .badge {
     display: inline-block;
     background: var(--accent);
     color: #08111f;
@@ -235,6 +235,16 @@
     padding: 1px 7px;
     margin-left: 6px;
   }
+  #fridgeBtn {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #fridgeBtn:hover { border-color: var(--accent); color: var(--accent); }
 
   /* 모달 공통(제외 재료 / 즐겨찾기) */
   .modal-overlay {
@@ -357,6 +367,11 @@
             피하고 싶은 음식/재료<span class="badge" id="excludeBadge" style="display:none">0</span>
           </button>
         </div>
+        <div class="cond-group">
+          <button id="fridgeBtn" type="button">
+            🧊 냉장고 재료<span class="badge" id="fridgeBadge" style="display:none">0</span>
+          </button>
+        </div>
       </div>
       <div id="chat"></div>
       <div class="status" id="status"></div>
@@ -375,6 +390,18 @@
       <div class="modal-actions">
         <button id="modalCancel" type="button">취소</button>
         <button id="modalSave" type="button">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="fridgeOverlay" class="modal-overlay">
+    <div class="modal-box">
+      <h3>냉장고 재료</h3>
+      <p>이미 갖고 있어서 새로 안 사도 되는 재료를 적어두세요. 쉼표(,)나 줄바꿈으로 여러 개 입력하세요. 이 브라우저에 저장되며, 장보기 계산 때 자동으로 구매 목록에서 빠집니다.</p>
+      <textarea id="fridgeInput" placeholder="예: 두부, 대파, 계란"></textarea>
+      <div class="modal-actions">
+        <button id="fridgeCancel" type="button">취소</button>
+        <button id="fridgeSave" type="button">저장</button>
       </div>
     </div>
   </div>
@@ -431,6 +458,10 @@
   const favoritesOverlay = document.getElementById("favoritesOverlay");
   const favoritesListEl = document.getElementById("favoritesList");
   const favoritesClose = document.getElementById("favoritesClose");
+  const fridgeBtn = document.getElementById("fridgeBtn");
+  const fridgeBadge = document.getElementById("fridgeBadge");
+  const fridgeOverlay = document.getElementById("fridgeOverlay");
+  const fridgeInput = document.getElementById("fridgeInput");
 
   const IMAGE_URL_RE = /https?:\/\/[^\s()<>"']+\.(?:jpg|jpeg|png|gif|webp)(?:\?[^\s()<>"']*)?/gi;
   const URL_RE = /https?:\/\/[^\s()<>"']+/g;
@@ -477,6 +508,53 @@
     closeExcludeModal();
   });
 
+  // ---- 냉장고 재료 (이미 있어서 안 사도 되는 재료) ----
+  // 인원수/예산/제외재료와 달리 새로고침해도 남아있어야 하는 정보라
+  // localStorage에 저장한다.
+  function loadFridgeItems() {
+    try {
+      const raw = localStorage.getItem("recifit_fridge_items");
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
+  }
+  let fridgeItems = loadFridgeItems();
+
+  function refreshFridgeBadge() {
+    if (fridgeItems.length) {
+      fridgeBadge.style.display = "inline-block";
+      fridgeBadge.textContent = fridgeItems.length;
+    } else {
+      fridgeBadge.style.display = "none";
+    }
+  }
+  refreshFridgeBadge();
+
+  function openFridgeModal() {
+    fridgeInput.value = fridgeItems.join(", ");
+    fridgeOverlay.classList.add("open");
+    fridgeInput.focus();
+  }
+  function closeFridgeModal() {
+    fridgeOverlay.classList.remove("open");
+  }
+  fridgeBtn.addEventListener("click", openFridgeModal);
+  document.getElementById("fridgeCancel").addEventListener("click", closeFridgeModal);
+  fridgeOverlay.addEventListener("click", (e) => {
+    if (e.target === fridgeOverlay) closeFridgeModal();
+  });
+  document.getElementById("fridgeSave").addEventListener("click", () => {
+    fridgeItems = fridgeInput.value
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    localStorage.setItem("recifit_fridge_items", JSON.stringify(fridgeItems));
+    refreshFridgeBadge();
+    closeFridgeModal();
+  });
+
   // 조건 바 상태를 자연어 한 줄로 요약 — 타이핑해서 보낸 메시지 앞에만 붙인다
   // (카드 클릭/예-아니요 같은 빠른 응답에는 안 붙인다)
   function buildConditionPrefix() {
@@ -484,6 +562,7 @@
     const budget = budgetInputEl.value.trim();
     if (budget) parts.push(`예산 ${Number(budget).toLocaleString()}원`);
     if (excludedItems.length) parts.push(`${excludedItems.join(", ")} 제외`);
+    if (fridgeItems.length) parts.push(`냉장고에 ${fridgeItems.join(", ")} 있음(이미 있으니 구매 목록에서 빼줘)`);
     return parts.join(", ") + ". ";
   }
 
