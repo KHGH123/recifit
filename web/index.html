@@ -1063,12 +1063,28 @@
     const wrap = document.createElement("div");
     wrap.className = "board-block";
 
-    const result =
-      entry.type === "recipe"
-        ? renderRecipeDetailInto(wrap, entry.detail, entry.outroText)
-        : entry.type === "cart"
-        ? renderShoppingListInto(wrap, entry.data, entry.outroText)
-        : renderTextBoardInto(wrap, entry.text, entry.candidatePool);
+    // 렌더링 중 하나라도 예외가 나면(예상 못 한 데이터 모양 등) 그 전에
+    // 이미 boardEl.innerHTML을 비워둔 상태라 화면이 완전히 빈 채로 남는
+    // 문제가 실제로 있었다 — 원인을 알 수 없더라도 최소한 사용자에게는
+    // 빈 화면 대신 안내 문구를 보여주고, 콘솔에는 실제 에러를 남겨서
+    // 나중에 원인을 추적할 수 있게 한다.
+    let result;
+    try {
+      result =
+        entry.type === "recipe"
+          ? renderRecipeDetailInto(wrap, entry.detail, entry.outroText)
+          : entry.type === "cart"
+          ? renderShoppingListInto(wrap, entry.data, entry.outroText)
+          : renderTextBoardInto(wrap, entry.text, entry.candidatePool);
+    } catch (err) {
+      console.error("보드 렌더링 실패:", err, entry);
+      wrap.innerHTML = "";
+      const errMsg = document.createElement("div");
+      errMsg.className = "board-intro";
+      errMsg.textContent = "이 내용을 표시하는 중 문제가 생겼어요. '이전으로'를 눌러보거나 새로고침해주세요.";
+      wrap.appendChild(errMsg);
+      result = { outroLines: [] };
+    }
 
     boardEl.appendChild(wrap);
     return result;
