@@ -55,6 +55,15 @@ _QUALIFIER_WORDS = {
 _TOKEN_SPLIT_RE = re.compile(r"[\s/,()\[\]~\-·]+")
 _PURE_NUMERIC_RE = re.compile(r"^[\d.]+[a-zA-Z가-힣]{0,2}$")
 
+# 레시피 원문에 사이시옷 없이 쓴 표기("고추가루")가 실제 상품명 표기
+# ("고춧가루")와 달라서, 둘 다 같은 재료인데도 글자만 다르면 관련 없다고
+# 걸러지는 경우가 있었다. 흔한 것만 좁게 등록한다.
+_KEYWORD_ALIASES = {
+    "고추가루": "고춧가루",
+    "김치국물": "김칫국물",
+    "고기국물": "고깃국물",
+}
+
 
 def _core_keywords(ingredient_name: str) -> list[str]:
     keywords = []
@@ -62,7 +71,7 @@ def _core_keywords(ingredient_name: str) -> list[str]:
         token = token.strip()
         if len(token) < 2 or token in _QUALIFIER_WORDS or _PURE_NUMERIC_RE.match(token):
             continue
-        keywords.append(token)
+        keywords.append(_KEYWORD_ALIASES.get(token, token))
     return keywords
 
 
@@ -171,10 +180,14 @@ def pick_cheapest_product(
         return {"selected": None, "quantity": 0, "subtotal": 0, "skipped_reason": reason}
 
     if ingredient_name:
+        # 관련 있는 후보가 있으면 그중에서만 고른다(대파 검색에 버섯이
+        # 뽑히는 걸 막는 원래 목적). 근데 하나도 없다고 "상품을 찾지
+        # 못함"으로 완전히 비워버리진 않는다 — 화면에 아예 아무것도 안
+        # 뜨는 것보다는, 그나마 검색된 것 중 제일 싼 걸 보여주는 쪽을
+        # 택한다(정확도보다 "항상 뭔가는 뜬다"를 우선하기로 한 결정).
         relevant_candidates = [c for c in safe_candidates if is_relevant_product(ingredient_name, c.get("name", ""))]
-        if not relevant_candidates:
-            return {"selected": None, "quantity": 0, "subtotal": 0, "skipped_reason": "관련 있는 상품을 찾지 못함"}
-        safe_candidates = relevant_candidates
+        if relevant_candidates:
+            safe_candidates = relevant_candidates
 
     best = None
     best_qty = 1
