@@ -1575,12 +1575,16 @@
 
       if (recipeDetail && !recipeDetail.error) {
         // 레시피 상세는 Gemini가 옮겨 적은 텍스트가 아니라 get_recipe의
-        // 원본 응답으로 직접 그린다 — 모델 답변(reply)은 그 밑에 붙는
-        // 짧은 대화(예: "장보기 상품도 찾아드릴까요?")로만 쓴다.
-        const recipeOutro = sanitizeOutroText(reply, "레시피 준비됐어요! 왼쪽에서 확인해보세요 📋");
-        const { outroLines } = showBoard({ type: "recipe", detail: recipeDetail, outroText: recipeOutro }, sendBoardIndex);
-        const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 조리순서를 확인해보세요 📋";
-        addBubble("bot", chatMsg);
+        // 원본 응답으로 직접 그린다 — 모델 답변(reply)은 쓰지 않는다.
+        // 왼쪽 보드와 오른쪽 채팅 버블에 똑같은 문구를 그대로 또 띄우면
+        // 중복이니(실제로 재현된 문제) 서로 다른 역할을 준다: 왼쪽은
+        // "?"로 끝나는 질문을 줘서 appendQuickReplyIfQuestion이 예/아니요
+        // 버튼을 붙이게 하고, 오른쪽 채팅은 짧은 안내문 하나만 보여준다.
+        showBoard(
+          { type: "recipe", detail: recipeDetail, outroText: "실제 장보기 상품과 정확한 가격까지 찾아드릴까요?" },
+          sendBoardIndex
+        );
+        addBubble("bot", "레시피 찾았어요! 왼쪽에서 확인해보세요 📋 실제 상품까지 찾아볼까요?");
       } else if (shoppingList) {
         // 장바구니 결과도 마찬가지로 build_shopping_list의 원본 응답을
         // 직접 그린다 — 재료가 많을 때 모델이 텍스트로 옮겨 적으면서
