@@ -973,14 +973,6 @@
   // budget/within_budget)를 직접 그린다 — get_recipe와 같은 이유로,
   // Gemini가 재료 목록을 텍스트로 옮겨 적다가 일부를 빠뜨리거나(실제로
   // 재현된 문제) 가격을 잘못 옮기는 일이 애초에 생길 수 없다.
-  // get_recipe/build_shopping_list 결과는 화면이 원본 데이터로 이미 다
-  // 그린다 — 모델의 텍스트 답변은 필요 없다. 모델이 재료 목록이나
-  // 조리순서 전체를 다시 옮겨 적어버려서(agent.py 6/9번 지침 위반) 구조화된
-  // 카드 밑에 같은 내용이 지저분하게 중복되는 문제가 실제로 있었다 —
-  // 내용을 보고 판단하지 않고, 이 자리에는 항상 고정된 짧은 문구만 쓴다.
-  function sanitizeOutroText(text, fallback) {
-    return fallback;
-  }
 
   function renderShoppingListInto(wrap, data, outroText) {
     const titleEl = document.createElement("div");
@@ -1589,12 +1581,12 @@
         // 장바구니 결과도 마찬가지로 build_shopping_list의 원본 응답을
         // 직접 그린다 — 재료가 많을 때 모델이 텍스트로 옮겨 적으면서
         // 일부를 빠뜨리거나(과거), 통째로 다시 옮겨 적어 중복 표시되는
-        // (지금) 문제가 실제로 있었다.
-        const cartOutro = sanitizeOutroText(reply, "장보기 목록 준비됐어요! 왼쪽에서 확인해보세요 📋");
-        const { outroLines } = showBoard({ type: "cart", data: shoppingList, outroText: cartOutro }, sendBoardIndex);
-        if (pendingCacheKey) saveCachedCart(pendingCacheKey, shoppingList, cartOutro);
-        const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
-        addBubble("bot", chatMsg);
+        // (지금) 문제가 실제로 있었다. 왼쪽 보드는 이미 카드로 다 보여주고
+        // 더 물어볼 것도 없는 마지막 단계라 outroText 없이 그대로 두고,
+        // "장보기 목록 준비됐어요" 안내는 오른쪽 채팅에만 띄운다.
+        showBoard({ type: "cart", data: shoppingList }, sendBoardIndex);
+        if (pendingCacheKey) saveCachedCart(pendingCacheKey, shoppingList, "");
+        addBubble("bot", "장보기 목록 준비됐어요! 왼쪽에서 확인해보세요 📋");
       } else if (isBigContent(reply)) {
         const { outroLines } = showBoard({ type: "text", text: reply, candidatePool }, sendBoardIndex);
         const chatMsg = outroLines && outroLines.length ? outroLines.join(" ") : "왼쪽에서 확인해보세요 📋";
