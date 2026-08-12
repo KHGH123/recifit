@@ -12,7 +12,13 @@ it once with the parsed ingredient list, and scaling, searching Kurly,
 picking the cheapest option, and summing the total all happen here in plain
 Python.
 """
-from recifit_agent.cart_tools import pick_cheapest_product, scale_ingredient_amount, summarize_cart, to_base_unit
+from recifit_agent.cart_tools import (
+    is_relevant_product,
+    pick_cheapest_product,
+    scale_ingredient_amount,
+    summarize_cart,
+    to_base_unit,
+)
 from recifit_agent.ingredient_price_cache import record_price_observations
 from recifit_agent.kurly_client import search_products
 
@@ -23,9 +29,14 @@ def _cache_price_observations(name: str, candidates: list[dict]) -> None:
     # 캐시에 쌓는다 — 후보가 많을수록 평균이 실제 시세에 가까워진다.
     # 가격 캐시는 부가 기능이라 Firestore 오류가 나도 장보기 흐름 자체는
     # 계속돼야 하므로 실패를 조용히 무시한다.
+    #
+    # 관련 없는 상품(마켓컬리 검색이 잘못 매칭해준 것, 예: "대파"인데
+    # "팽이버섯"이 나옴)까지 그대로 캐시에 넣으면 [A]단계 참고가가 엉뚱한
+    # 가격으로 오염되므로, pick_cheapest_product와 같은 기준으로 먼저 거른다.
+    relevant_candidates = [c for c in candidates if is_relevant_product(name, c.get("name", ""))]
     buckets: dict[str, list[float]] = {}
     sample_names: dict[str, str] = {}
-    for candidate in candidates:
+    for candidate in relevant_candidates:
         price = candidate.get("price")
         if price is None:
             continue
@@ -89,7 +100,7 @@ def build_shopping_list(
         candidates = search_products(name)["results"] if name else []
         if candidates:
             _cache_price_observations(name, candidates)
-        picked = pick_cheapest_product(scale["scaled_amount"], unit, candidates, exclude_terms)
+        picked = pick_cheapest_product(scale["scaled_amount"], unit, candidates, exclude_terms, ingredient_name=name)
 
         selections.append(
             {
